@@ -1,0 +1,47 @@
+{
+  "invoice_id": "POS-2024-001",
+  "invoice_number": "INV-001",
+  "invoice_date": "2024-05-21T10:00:00",
+  "invoice_type": "invoice",
+  "customer": {
+    "name": "ABC Company Ltd",
+    "tin": "1234567890",
+    "address": "123 Main Street, Harare",
+    "phone": "+263771234567",
+    "email": "customer@abccompany.co.zw"
+  },
+  "items": [
+    {
+      "line_number": 1,
+      "product_code": "PROD-001",
+      "product_name": "Product A",
+      "hs_code": "12345678",
+      "quantity": 2,
+      "unit_price": 100.00,
+      "line_total": 200.00,
+      "tax_code": "VAT",
+      "tax_rate": 15.5
+    },
+    {
+      "line_number": 2,
+      "product_code": "PROD-002",
+      "product_name": "Product B",
+      "hs_code": "87654321",
+      "quantity": 1,
+      "unit_price": 150.00,
+      "line_total": 150.00,
+      "tax_code": "VAT",
+      "tax_rate": 15.5
+    }
+  ],
+  "payment": {
+    "method": "cash",
+    "amount": 404.25
+  },
+  "subtotal": 350.00,
+  "tax_amount": 54.25,
+  "total_amount": 404.25,
+  "currency": "USD",
+  "notes": "Thank you for your business!",
+  "source_system": "POS"
+}

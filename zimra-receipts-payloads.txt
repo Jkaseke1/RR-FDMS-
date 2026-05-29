@@ -1,0 +1,303 @@
+ZIMRA FDMS Receipt Payloads
+Rapid Roots Investment Pvt Ltd
+Device ID: 35224
+Date: 2026-05-28
+
+================================================================================
+1. INV0594 - ZWG INVOICE (Receipt Counter: 33, Receipt ID: 11043759)
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "ZWG",
+    "receiptCounter": 33,
+    "receiptGlobalNo": 33,
+    "invoiceNo": "INV0594",
+    "receiptDate": "2026-05-28T07:42:16",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": null,
+    "buyerData": {
+      "buyerRegisterName": "Rooneys Hire Services Pvt Ltd-ZWG",
+      "buyerTIN": "2000001033",
+      "VATNumber": "220009947",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "Hatfield",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": null,
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": 121.212,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 1212.12,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": 187.88,
+        "salesAmountWithTax": 1400
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": 1400
+      }
+    ],
+    "receiptTotal": 1400,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "Urq2x2cPMaRFtikJvUEFScesmRJkm1pzDozLxgNQqk0=",
+      "signature": "MEUCIHbBm5YyXAgaEi0hZWv6EAZ69awqg65JoTgyad0XRhmXAiEA+egkqBhhcIDumMHY9oMGR0GUndQJKqeB7goupQpBnQ8="
+    }
+  }
+}
+
+================================================================================
+2. INV0593 - USD INVOICE (Receipt Counter: 34, Receipt ID: 11043760)
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "USD",
+    "receiptCounter": 34,
+    "receiptGlobalNo": 34,
+    "invoiceNo": "INV0593",
+    "receiptDate": "2026-05-28T07:42:19",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": null,
+    "buyerData": {
+      "buyerRegisterName": "Wilsher Williams and Associates",
+      "buyerTIN": "2001515451",
+      "VATNumber": "220401232",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Mt Pleasant",
+        "city": "Harare",
+        "street": "Arundel",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": null,
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": 2.5974,
+        "receiptLineQuantity": 100,
+        "receiptLineTotal": 259.74,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": 40.26,
+        "salesAmountWithTax": 300
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": 300
+      }
+    ],
+    "receiptTotal": 300,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "KGtUORh1y5Ew7b+9QvmaKWtaJA4V7Je2C0gd0y51zug=",
+      "signature": "MEQCIGK7uRrOWtMjRsjBjPQAz5JNzyvJv65eVfD8OHaMxqwkAiBkITlea1yFsn9zh8RjtUvYaVOBXZEC0G0wI3RBJjf12A=="
+    }
+  }
+}
+
+================================================================================
+3. CRN0054 - USD CREDIT NOTE (Receipt Counter: 35, Receipt ID: 11043792)
+   Linked to original invoice INV0593 (Receipt ID: 11043760)
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "CreditNote",
+    "receiptCurrency": "USD",
+    "receiptCounter": 35,
+    "receiptGlobalNo": 35,
+    "invoiceNo": "CRN0054",
+    "receiptDate": "2026-05-28T07:49:54",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": "Credit note reference: CRN0054 | Original invoice: INV0593",
+    "buyerData": {
+      "buyerRegisterName": "Mt Pleasant",
+      "buyerTIN": "2001515451",
+      "VATNumber": "220401232",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "VAT Number",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": {
+      "receiptID": 11043760,
+      "deviceID": 35224,
+      "receiptGlobalNo": 34,
+      "fiscalDayNo": 3,
+      "creditDebitNoteNumber": "CRN0054",
+      "creditDebitNoteDate": "2026-05-28T07:49:54",
+      "creditDebitNoteReason": "Credit note for INV0593"
+    },
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": -2.5974,
+        "receiptLineQuantity": 100,
+        "receiptLineTotal": -259.74,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": -40.26,
+        "salesAmountWithTax": -300
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": -300
+      }
+    ],
+    "receiptTotal": -300,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "ch39E740bmenYHOkrA9AMyhmsgbrn04uGunTrbEqCCI=",
+      "signature": "MEUCIE2hZKssrqRc2q1PnoF72oYddwz5kzhem5lNiFcXnvf+AiEAuVTt5xLrdvTaXpC3JZTfSu25AcX+Udmt3UcgHlO7OME="
+    }
+  }
+}
+
+================================================================================
+4. CRN0053 - ZWG CREDIT NOTE (Receipt Counter: 36, Receipt ID: 11043793)
+   Linked to original invoice INV0594 (Receipt ID: 11043759)
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "CreditNote",
+    "receiptCurrency": "ZWG",
+    "receiptCounter": 36,
+    "receiptGlobalNo": 36,
+    "invoiceNo": "CRN0053",
+    "receiptDate": "2026-05-28T07:49:55",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": "Credit note reference: CRN0053 | Original invoice: INV0594",
+    "buyerData": {
+      "buyerRegisterName": "Rooneys Hire Services Pvt Ltd-ZWG",
+      "buyerTIN": "2000001033",
+      "VATNumber": "220009947",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "Hatfield",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": {
+      "receiptID": 11043759,
+      "deviceID": 35224,
+      "receiptGlobalNo": 33,
+      "fiscalDayNo": 3,
+      "creditDebitNoteNumber": "CRN0053",
+      "creditDebitNoteDate": "2026-05-28T07:49:55",
+      "creditDebitNoteReason": "Credit note for INV0594"
+    },
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": -121.212,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -1212.12,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": -187.88,
+        "salesAmountWithTax": -1400
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": -1400
+      }
+    ],
+    "receiptTotal": -1400,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "VWDqHcn/Bn3Vydkt3QwMqFgDUFEr7mz2RW+GaFnaw4A=",
+      "signature": "MEYCIQDhhxvEndrVl6jMn3/mqDtxjIh4rOTGArF9wtrU/Ww25wIhAK2udksi+nESDxIYuUcBvkC6a+LyCar1/sUX37LPpN+7"
+    }
+  }
+}
+
+================================================================================
+SUMMARY
+================================================================================
+
+Device ID:        35224
+Taxpayer:         Rapid Roots Investment Pvt Ltd
+Date:             2026-05-28
+
+| Document  | Type         | Currency | Counter | Receipt ID | Status |
+|-----------|-------------|----------|---------|------------|--------|
+| INV0594   | Invoice      | ZWG      | 33      | 11043759   | Valid  |
+| INV0593   | Invoice      | USD      | 34      | 11043760   | Valid  |
+| CRN0054   | Credit Note  | USD      | 35      | 11043792   | Valid  |
+| CRN0053   | Credit Note  | ZWG      | 36      | 11043793   | Valid  |
+
+Credit Note Linkage:
+- CRN0054 linked to INV0593 (Receipt ID: 11043760, Counter: 34)
+- CRN0053 linked to INV0594 (Receipt ID: 11043759, Counter: 33)
+
+All receipts successfully submitted and validated by ZIMRA portal.
