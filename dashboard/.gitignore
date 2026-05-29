@@ -1,0 +1,17 @@
+# Ignore everything in the dashboard root except source and config files
+# (npm packages are installed here instead of node_modules due to flat install)
+*
+
+# Keep source code
+!src/
+!src/**
+
+# Keep config files
+!index.html
+!package.json
+!package-lock.json
+!vite.config.js
+!postcss.config.js
+!tailwind.config.js
+!RESTART_DASHBOARD.bat
+!.gitignore
