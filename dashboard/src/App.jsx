@@ -8,6 +8,7 @@ import ZReports from './pages/ZReports';
 import Errors from './pages/Errors';
 import Device from './pages/Device';
 import Logs from './pages/Logs';
+import { COMPANY } from './config/company';
 
 function Sidebar() {
   const location = useLocation();
@@ -25,7 +26,7 @@ function Sidebar() {
     <aside className="w-56 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
       <div className="p-5 border-b border-gray-100">
         <h1 className="text-sm font-bold text-gray-900">ZIMRA FDMS Bridge</h1>
-        <p className="text-xs text-blue-600 font-medium mt-0.5">Rapid Roots</p>
+        <p className="text-xs text-blue-600 font-medium mt-0.5">{COMPANY.shortName}</p>
       </div>
       <nav className="flex-1 py-3">
         {navItems.map((item) => {
@@ -62,11 +63,11 @@ function Header() {
       <div className="flex items-center gap-3">
         <h2 className="text-sm font-bold text-gray-800">ZIMRA FDMS Bridge</h2>
         <span className="text-gray-300">·</span>
-        <span className="text-sm text-blue-600 font-medium">Rapid Roots</span>
+        <span className="text-sm text-blue-600 font-medium">{COMPANY.shortName}</span>
       </div>
       <div className="flex items-center gap-3">
-        <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-          TEST ENVIRONMENT
+        <span className={`inline-flex items-center px-2.5 py-1 rounded text-xs font-medium border ${COMPANY.environment === 'PRODUCTION' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+          {COMPANY.environment} ENVIRONMENT
         </span>
         <span className="text-xs text-gray-400">Updated {timeStr}</span>
         <button

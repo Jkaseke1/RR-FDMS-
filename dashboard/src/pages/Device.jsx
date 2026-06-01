@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { COMPANY } from '../config/company';
 
 export default function Device() {
   const [device, setDevice] = useState(null);
@@ -22,44 +23,33 @@ export default function Device() {
         setReceipts(allReceipts);
       }
 
+      const base = {
+        deviceId: COMPANY.deviceId,
+        serialNo: COMPANY.serialNo,
+        tin: COMPANY.tin,
+        vatNo: COMPANY.vatNo,
+        taxpayer: COMPANY.name,
+        address: COMPANY.address,
+        telephone: COMPANY.telephone,
+        email: COMPANY.email,
+        model: COMPANY.model,
+        vatRate: COMPANY.vatRate,
+        taxIds: COMPANY.taxIds,
+        apiEndpoint: `${COMPANY.apiEndpoint} (${COMPANY.environment})`,
+        supabaseProject: (supabase?.supabaseUrl || '').replace('https://', '').slice(0, 12) + '...',
+      };
+
       if (latest) {
         setDevice({
-          deviceId: latest.device_id || '35224',
-          serialNo: 'RapidR-1',
-          tin: '2002054676',
-          vatNo: '220401569',
+          ...base,
+          deviceId: latest.device_id || COMPANY.deviceId,
           totalRevenue: allReceipts?.reduce((s, r) => s + (parseFloat(r.receipt_total) || 0), 0) || 0,
           lastReceipt: latest.invoice_no
             ? `${new Date(latest.receipt_date || latest.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · ${latest.invoice_no}`
             : '—',
-          taxpayer: 'Rapid Roots Investments (Pvt) Ltd',
-          address: '59 Glenelg Road, Vainona, Harare, Zimbabwe',
-          telephone: '0777544145 / 0778585874',
-          email: 'rapidrootszw@gmail.com',
-          model: 'Server v1',
-          vatRate: '15.5%',
-          taxIds: '517 — Standard 15.5% · 2 — Zero rated · 1 — Exempt',
-          apiEndpoint: 'fdmsapitest.zimra.co.zw (TEST)',
-          supabaseProject: 'tgqekxawvn...',
         });
       } else {
-        setDevice({
-          deviceId: '35224',
-          serialNo: 'RapidR-1',
-          tin: '2002054676',
-          vatNo: '220401569',
-          totalRevenue: 0,
-          lastReceipt: '—',
-          taxpayer: 'Rapid Roots Investments (Pvt) Ltd',
-          address: '59 Glenelg Road, Vainona, Harare, Zimbabwe',
-          telephone: '0777544145 / 0778585874',
-          email: 'rapidrootszw@gmail.com',
-          model: 'Server v1',
-          vatRate: '15.5%',
-          taxIds: '517 — Standard 15.5% · 2 — Zero rated · 1 — Exempt',
-          apiEndpoint: 'fdmsapitest.zimra.co.zw (TEST)',
-          supabaseProject: 'tgqekxawvn...',
-        });
+        setDevice({ ...base, totalRevenue: 0, lastReceipt: '—' });
       }
     }
     fetchData();

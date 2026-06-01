@@ -26,6 +26,8 @@
     "pdf:watch": "node src/integrations/pdfFiscalizationService.js watch",
     "pdf:process": "node src/integrations/pdfFiscalizationService.js once",
     "fdms:setup": "node scripts/setupFDMS.js",
+    "reset:client": "node scripts/resetForNewClient.js",
+    "reset:client:confirm": "node scripts/resetForNewClient.js --confirm",
     "device:status": "node scripts/checkDeviceStatus.js",
     "system:status": "node scripts/checkSystemStatus.js",
     "device:check": "node scripts/checkDeviceRegistration.js",

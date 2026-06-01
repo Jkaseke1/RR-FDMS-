@@ -5,6 +5,7 @@ import {
   PenTool, Lock, Server
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { COMPANY } from '../config/company';
 
 function StatCard({ title, value, subtext, icon: Icon, color = 'text-gray-900' }) {
   return (
@@ -204,12 +205,12 @@ export default function Overview() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide">Device Info</h2>
           </div>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Device ID</span><span className="font-medium text-gray-900">35224</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Serial No</span><span className="font-medium text-gray-900">RapidR-1</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">TIN</span><span className="font-medium text-gray-900">2002054676</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">VAT No</span><span className="font-medium text-gray-900">220401569</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Environment</span><span className="font-medium text-amber-600">TEST</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">API Endpoint</span><span className="font-medium text-gray-900">fdmsapitest.zimra.co.zw</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Device ID</span><span className="font-medium text-gray-900">{COMPANY.deviceId}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Serial No</span><span className="font-medium text-gray-900">{COMPANY.serialNo}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">TIN</span><span className="font-medium text-gray-900">{COMPANY.tin}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">VAT No</span><span className="font-medium text-gray-900">{COMPANY.vatNo}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Environment</span><span className={`font-medium ${COMPANY.environment === 'PRODUCTION' ? 'text-green-600' : 'text-amber-600'}`}>{COMPANY.environment}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">API Endpoint</span><span className="font-medium text-gray-900">{COMPANY.apiEndpoint}</span></div>
           </div>
         </div>
       </div>
