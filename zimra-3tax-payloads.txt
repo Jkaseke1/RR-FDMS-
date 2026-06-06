@@ -1,0 +1,227 @@
+================================================================================
+ZIMRA Payloads - 3 Tax Types (Standard + Zero-rated + Exempt)
+Date: 2026-06-03
+Purpose: Evidence for ZIMRA support - device accepts payload, portal rejects it
+================================================================================
+
+--- INVOICE 1: INV0618 (ZWG) ---
+Receipt Counter: 56
+Receipt ID: 11057099
+
+{
+  "receipt": {
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "ZWG",
+    "receiptCounter": 56,
+    "receiptGlobalNo": 56,
+    "invoiceNo": "INV0618",
+    "receiptDate": "2026-06-03T13:34:43",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": null,
+    "buyerData": {
+      "buyerRegisterName": "Midlands State University Gweru Zimbabwe-ZWG",
+      "buyerTIN": "2000083330",
+      "VATNumber": "220129897",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Gweru",
+        "city": "Gweru",
+        "street": "Senga",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": null,
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": 121.212,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 1212.12,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 2,
+        "receiptLineHSCode": "31010000",
+        "receiptLineName": "Compost Organic kg",
+        "receiptLinePrice": 100,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 1000,
+        "taxCode": "C",
+        "taxPercent": 0,
+        "taxID": 1
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 3,
+        "receiptLineHSCode": "87049090",
+        "receiptLineName": "Milk UHT",
+        "receiptLinePrice": 100,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 1000,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": 187.88,
+        "salesAmountWithTax": 1400
+      },
+      {
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2,
+        "taxAmount": 0,
+        "salesAmountWithTax": 1000
+      },
+      {
+        "taxCode": "C",
+        "taxPercent": 0,
+        "taxID": 1,
+        "taxAmount": 0,
+        "salesAmountWithTax": 1000
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": 3400
+      }
+    ],
+    "receiptTotal": 3400,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "aOzA8pCE2zEPdj4t1Lz44fyenN7Uo6F9nPjzh51tevk=",
+      "signature": "MEYCIQCn4Aptwkfw/vLqboBYPwFOMPu9BrvobSgLxc1z1vkWXQIhALbM233kkUvQ0OZrRw2qDcMYCzgJTAWYZBMBIKjr313H"
+    }
+  }
+}
+
+--- INVOICE 2: INV0619 (USD) ---
+Receipt Counter: 57
+Receipt ID: 11057100
+
+{
+  "receipt": {
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "USD",
+    "receiptCounter": 57,
+    "receiptGlobalNo": 57,
+    "invoiceNo": "INV0619",
+    "receiptDate": "2026-06-03T13:34:45",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": null,
+    "buyerData": {
+      "buyerRegisterName": "Midlands State University Gweru Zimbabwe",
+      "buyerTIN": "2000083330",
+      "VATNumber": "220129897",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Gweru",
+        "city": "Gweru",
+        "street": "Senga",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": null,
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": 3.03,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 30.3,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 2,
+        "receiptLineHSCode": "31010000",
+        "receiptLineName": "Compost Organic kg",
+        "receiptLinePrice": 7.5,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 75,
+        "taxCode": "C",
+        "taxPercent": 0,
+        "taxID": 1
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 3,
+        "receiptLineHSCode": "87049090",
+        "receiptLineName": "Milk UHT",
+        "receiptLinePrice": 1,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 10,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": 4.7,
+        "salesAmountWithTax": 35
+      },
+      {
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2,
+        "taxAmount": 0,
+        "salesAmountWithTax": 10
+      },
+      {
+        "taxCode": "C",
+        "taxPercent": 0,
+        "taxID": 1,
+        "taxAmount": 0,
+        "salesAmountWithTax": 75
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": 115
+      }
+    ],
+    "receiptTotal": 115,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "(hash)",
+      "signature": "(signature)"
+    }
+  }
+}
+
+================================================================================
+SUMMARY FOR ZIMRA SUPPORT:
+
+Device ID: 0000035224
+Device Tax Config (from GetConfig):
+  - VAT taxID: 517 (15.5%)
+  - Zero taxID: 2 (0%)
+  - Exempt taxID: 1 (0%)
+
+Result: SubmitReceipt API ACCEPTS the payload and assigns Receipt IDs.
+        BUT the ZIMRA portal shows "Invalid tax is used" / "Incorrectly calculated"。
+
+Request: Please verify and activate taxID 1 (Exempt) on device 35224 so that
+         the portal accepts receipts with 3 distinct tax groups.
+================================================================================

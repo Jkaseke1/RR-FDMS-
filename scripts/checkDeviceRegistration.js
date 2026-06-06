@@ -8,9 +8,9 @@ const { getDeviceClient } = require('../src/http/deviceClient');
 const fs = require('fs');
 const path = require('path');
 
-const DEVICE_ID = process.env.FDMS_DEVICE_ID || '35224';
-const API_URL = process.env.FDMS_API_URL || process.env.FDMS_BASE_URL || 'https://fdmsapitest.zimra.co.zw';
-const CERT_PATH = process.env.FDMS_CERT_PATH || './certs/device.cert.pem';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
+const API_URL = process.env.FDMS_API_URL || process.env.FDMS_BASE_URL || process.env.FDMS_URL;
+const CERT_PATH = process.env.FDMS_CERT_PATH || './certs/device.crt.pem';
 const KEY_PATH = process.env.FDMS_KEY_PATH || './certs/device.key.pem';
 
 async function checkRegistration() {

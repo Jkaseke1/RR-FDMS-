@@ -6,7 +6,7 @@
 require('dotenv').config();
 const { openDay } = require('../src/fiscalDay/openDay');
 
-const DEVICE_ID = process.env.FDMS_DEVICE_ID || '35224';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 
 async function main() {
   console.log('\n╔════════════════════════════════════════════════════════╗');

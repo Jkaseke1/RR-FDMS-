@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { createDeviceClient } = require('../src/http/deviceClient');
 
 async function testGetConfig() {
-  const deviceId = 35224;
+  const deviceId = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
   
   console.log('\n========================================');
   console.log('Testing GetConfig API');

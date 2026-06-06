@@ -193,6 +193,8 @@ async function parseInvoicePDF(filePath) {
           if (c.match(/^[A-Z]{2,8}$/)) continue;
           // Skip lines starting with a digit (house numbers like "46 St Patricks Rd")
           if (c.match(/^\d/)) continue;
+          // Skip house numbers like "No 1 Senga Road", "No 25 Borrowdale Rd"
+          if (c.match(/^No\s+\d+/i)) continue;
           // Require at least one space (real names are multi-word)
           if (c.length > 5 && c.match(/[a-z]/) && c.match(/\s/)) {
             customerName = c;
@@ -411,10 +413,93 @@ async function parseInvoicePDF(filePath) {
   const lineItems = [];
 
   for (const line of lines) {
+    // FORMAT E: with Tax Code column at END (Sage tax codes 1,6,7)
+    // PDF extraction order: Code Desc Qty Tax TotalIncl Price HSCode TaxCode
+    // Example: LAWN002 Kikuyu Lawn - sqm 10.00 4.70 35.00 3.50    12092500 1
+    const mE = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s+(\d+)\s*$/
+    );
+    if (mE) {
+      const qty = parseAmount(mE[3]);
+      const lineTax = parseAmount(mE[4]);
+      const lineTotalIncl = parseAmount(mE[5]);
+      const priceIncl = parseAmount(mE[6]);
+      const sageTaxCode = parseInt(mE[8], 10);
+      const lineTotalExcl = Math.round(
+        (lineTotalIncl - lineTax) * 100
+      ) / 100;
+      const priceExcl = qty > 0
+        ? Math.round(
+            (lineTotalExcl / qty) * 10000
+          ) / 10000
+        : 0;
+      const priceInclCalc = qty > 0
+        ? Math.round(
+            (lineTotalIncl / qty) * 10000
+          ) / 10000
+        : 0;
+
+      if (qty > 0 && lineTotalIncl !== 0) {
+        lineItems.push({
+          itemCode: mE[1].trim(),
+          description: mE[2].trim(),
+          hsCode: mE[7].trim(),
+          quantity: qty,
+          priceIncl: priceInclCalc,
+          priceExcl,
+          tax: lineTax,
+          sageTaxCode,
+          totalIncl: lineTotalIncl,
+          totalExcl: lineTotalExcl
+        });
+      }
+      continue;
+    }
+
+    // FORMAT H: Credit Note with Tax Code but NO tax value (exempt/zero items)
+    // Code Desc Qty TotalIncl Price HSCode TaxCode
+    // Example: COMP001 Compost Organic kg 10.00 1,000.00 100.00 31010000 7
+    const mH = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s+(\d+)\s*$/
+    );
+    if (mH) {
+      const qty = parseAmount(mH[3]);
+      const lineTotalIncl = parseAmount(mH[4]);
+      const priceIncl = parseAmount(mH[5]);
+      const sageTaxCode = parseInt(mH[7], 10);
+      const lineTotalExcl = lineTotalIncl; // No tax
+      const priceExcl = qty > 0
+        ? Math.round(
+            (lineTotalExcl / qty) * 10000
+          ) / 10000
+        : 0;
+      const priceInclCalc = qty > 0
+        ? Math.round(
+            (lineTotalIncl / qty) * 10000
+          ) / 10000
+        : 0;
+
+      if (qty > 0 && lineTotalIncl !== 0) {
+        lineItems.push({
+          itemCode: mH[1].trim(),
+          description: mH[2].trim(),
+          hsCode: mH[6].trim(),
+          quantity: qty,
+          priceIncl: priceInclCalc,
+          priceExcl,
+          tax: 0,
+          sageTaxCode,
+          totalIncl: lineTotalIncl,
+          totalExcl: lineTotalExcl
+        });
+      }
+      continue;
+    }
+
     // FORMAT A: with 8-digit HS code and tax
     // Code Desc Qty Tax TotalIncl Price HSCode
     const mA = line.match(
-      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+(\d{8})\s*$/
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s*$/
     );
     if (mA) {
       const qty = parseAmount(mA[3]);
@@ -435,7 +520,7 @@ async function parseInvoicePDF(filePath) {
           ) / 10000
         : 0;
 
-      if (qty > 0 && lineTotalIncl > 0) {
+      if (qty > 0 && lineTotalIncl !== 0) {
         lineItems.push({
           itemCode: mA[1].trim(),
           description: mA[2].trim(),
@@ -454,7 +539,7 @@ async function parseInvoicePDF(filePath) {
     // FORMAT A2: with 8-digit HS code but NO tax value
     // Code Desc Qty TotalIncl Price HSCode (zero-rated/exempt)
     const mA2 = line.match(
-      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+(\d{8})\s*$/
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s*$/
     );
     if (mA2) {
       const qty = parseAmount(mA2[3]);
@@ -472,7 +557,7 @@ async function parseInvoicePDF(filePath) {
           ) / 10000
         : 0;
 
-      if (qty > 0 && lineTotalIncl > 0) {
+      if (qty > 0 && lineTotalIncl !== 0) {
         lineItems.push({
           itemCode: mA2[1].trim(),
           description: mA2[2].trim(),
@@ -481,6 +566,7 @@ async function parseInvoicePDF(filePath) {
           priceIncl: priceInclCalc,
           priceExcl,
           tax: 0,
+          sageTaxCode: 6,
           totalIncl: lineTotalIncl,
           totalExcl: lineTotalExcl
         });
@@ -492,7 +578,7 @@ async function parseInvoicePDF(filePath) {
     // Code Desc Qty Tax Price HSCode TotalIncl
     // Example: LAWN002 Kikuyu Lawn - sqm 23.00 432.12 140.00 12092500 3,220.00
     const mC = line.match(
-      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+(\d{8})\s+([\d,]+\.?\d*)\s*$/
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s+(-?[\d,]+\.?\d*)\s*$/
     );
     if (mC) {
       const qty = parseAmount(mC[3]);
@@ -513,7 +599,7 @@ async function parseInvoicePDF(filePath) {
           ) / 10000
         : 0;
 
-      if (qty > 0 && lineTotalIncl > 0) {
+      if (qty > 0 && lineTotalIncl !== 0) {
         lineItems.push({
           itemCode: mC[1].trim(),
           description: mC[2].trim(),
@@ -522,6 +608,136 @@ async function parseInvoicePDF(filePath) {
           priceIncl: priceInclCalc,
           priceExcl,
           tax: lineTax,
+          sageTaxCode: lineTax > 0 ? 1 : 6,
+          totalIncl: lineTotalIncl,
+          totalExcl: lineTotalExcl
+        });
+      }
+      continue;
+    }
+
+    // FORMAT F: ZWG layout with Tax Code (TaxCode between Tax and Price)
+    // Code Desc Qty Tax TaxCode Price HSCode TotalIncl
+    // Example: LAWN002 Kikuyu Lawn - sqm 23.00 432.12 1 140.00 12092500 3,220.00
+    const mF = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d+)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s+(-?[\d,]+\.?\d*)\s*$/
+    );
+    if (mF) {
+      const qty = parseAmount(mF[3]);
+      const sageTaxCode = parseInt(mF[5], 10);
+      const lineTax = parseAmount(mF[4]);
+      const priceIncl = parseAmount(mF[6]);
+      const lineTotalIncl = parseAmount(mF[8]);
+      const lineTotalExcl = Math.round(
+        (lineTotalIncl - lineTax) * 100
+      ) / 100;
+      const priceExcl = qty > 0
+        ? Math.round(
+            (lineTotalExcl / qty) * 10000
+          ) / 10000
+        : 0;
+      const priceInclCalc = qty > 0
+        ? Math.round(
+            (lineTotalIncl / qty) * 10000
+          ) / 10000
+        : 0;
+
+      if (qty > 0 && lineTotalIncl !== 0) {
+        lineItems.push({
+          itemCode: mF[1].trim(),
+          description: mF[2].trim(),
+          hsCode: mF[7].trim(),
+          quantity: qty,
+          priceIncl: priceInclCalc,
+          priceExcl,
+          tax: lineTax,
+          sageTaxCode,
+          totalIncl: lineTotalIncl,
+          totalExcl: lineTotalExcl
+        });
+      }
+      continue;
+    }
+
+    // FORMAT F2: ZWG layout with Tax Code (TaxCode between Qty and Tax)
+    // Code Desc Qty TaxCode Tax Price HSCode TotalIncl
+    // Example: LAWN002 Kikuyu Lawn - sqm 23.00 1 432.12 140.00 12092500 3,220.00
+    const mF2 = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(\d+)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s+(-?[\d,]+\.?\d*)\s*$/
+    );
+    if (mF2) {
+      const qty = parseAmount(mF2[3]);
+      const sageTaxCode = parseInt(mF2[4], 10);
+      const lineTax = parseAmount(mF2[5]);
+      const priceIncl = parseAmount(mF2[6]);
+      const lineTotalIncl = parseAmount(mF2[8]);
+      const lineTotalExcl = Math.round(
+        (lineTotalIncl - lineTax) * 100
+      ) / 100;
+      const priceExcl = qty > 0
+        ? Math.round(
+            (lineTotalExcl / qty) * 10000
+          ) / 10000
+        : 0;
+      const priceInclCalc = qty > 0
+        ? Math.round(
+            (lineTotalIncl / qty) * 10000
+          ) / 10000
+        : 0;
+
+      if (qty > 0 && lineTotalIncl !== 0) {
+        lineItems.push({
+          itemCode: mF2[1].trim(),
+          description: mF2[2].trim(),
+          hsCode: mF2[7].trim(),
+          quantity: qty,
+          priceIncl: priceInclCalc,
+          priceExcl,
+          tax: lineTax,
+          sageTaxCode,
+          totalIncl: lineTotalIncl,
+          totalExcl: lineTotalExcl
+        });
+      }
+      continue;
+    }
+
+    // FORMAT G: ZWG layout with Tax Code at END
+    // Code Desc Qty Tax Price HSCode TotalIncl TaxCode
+    // Example: LAWN002 Kikuyu Lawn - sqm 23.00 432.12 140.00 12092500 3,220.00 1
+    const mG = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/']+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(\d{8})\s+(-?[\d,]+\.?\d*)\s+(\d+)\s*$/
+    );
+    if (mG) {
+      const qty = parseAmount(mG[3]);
+      const lineTax = parseAmount(mG[4]);
+      const priceIncl = parseAmount(mG[5]);
+      const lineTotalIncl = parseAmount(mG[7]);
+      const sageTaxCode = parseInt(mG[8], 10);
+      const lineTotalExcl = Math.round(
+        (lineTotalIncl - lineTax) * 100
+      ) / 100;
+      const priceExcl = qty > 0
+        ? Math.round(
+            (lineTotalExcl / qty) * 10000
+          ) / 10000
+        : 0;
+      const priceInclCalc = qty > 0
+        ? Math.round(
+            (lineTotalIncl / qty) * 10000
+          ) / 10000
+        : 0;
+
+      if (qty > 0 && lineTotalIncl !== 0) {
+        lineItems.push({
+          itemCode: mG[1].trim(),
+          description: mG[2].trim(),
+          hsCode: mG[6].trim(),
+          quantity: qty,
+          priceIncl: priceInclCalc,
+          priceExcl,
+          tax: lineTax,
+          sageTaxCode,
           totalIncl: lineTotalIncl,
           totalExcl: lineTotalExcl
         });
@@ -532,7 +748,7 @@ async function parseInvoicePDF(filePath) {
     // FORMAT B: without HS code — 4, 5, or 6 numeric columns
     // Handles both service lines (4 nums) and product lines (6 nums)
     const mB = line.match(
-      /^([A-Z0-9>]+)\s+([\w\s\-\.\/'&,]+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*([\d,]+\.?\d*)?\s*([\d,]+\.?\d*)?\s*$/
+      /^([A-Z0-9>]+)\s+([\w\s\-\.\/'&,]+?)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s*(-?[\d,]+\.?\d*)?\s*(-?[\d,]+\.?\d*)?\s*$/
     );
     if (mB && !line.match(/\d{8}/)) {
       const code = mB[1].trim();
@@ -602,7 +818,7 @@ async function parseInvoicePDF(filePath) {
         continue;
       }
 
-      if (qty > 0 && lineTotalIncl > 0 &&
+      if (qty > 0 && lineTotalIncl !== 0 &&
           code.length >= 3) {
         lineItems.push({
           itemCode: code,
@@ -612,6 +828,7 @@ async function parseInvoicePDF(filePath) {
           priceIncl,
           priceExcl,
           tax: lineTax,
+          sageTaxCode: lineTax > 0 ? 1 : 6,
           totalIncl: lineTotalIncl,
           totalExcl: lineTotalExcl
         });
@@ -636,7 +853,7 @@ async function parseInvoicePDF(filePath) {
   // Total Incl — use last occurrence
   for (let i = lines.length - 1; i >= 0; i--) {
     const m = lines[i].match(
-      /Total\s*\(Incl\)\s+([\d,]+\.?\d*)/i
+      /Total\s*\(Incl\)\s+(-?[\d,]+\.?\d*)/i
     );
     if (m) {
       totalIncl = parseAmount(m[1]);
@@ -649,7 +866,7 @@ async function parseInvoicePDF(filePath) {
   for (let i = 0; i < lines.length; i++) {
     // Inline: "Total (Excl)  1,870.13"
     const inlineExcl = lines[i].match(
-      /^Total\s*\(Excl\)\s+([\d,]+\.?\d*)/i
+      /^Total\s*\(Excl\)\s+(-?[\d,]+\.?\d*)/i
     );
     if (inlineExcl) {
       totalExcl = parseAmount(inlineExcl[1]);
@@ -664,7 +881,7 @@ async function parseInvoicePDF(filePath) {
         if (lines[j].match(/^Discount/i)) continue;
         if (lines[j].match(/^Total/i)) break;
         if (lines[j].match(/^BANK/i)) break;
-        const nm = lines[j].match(/^([\d,]+\.\d{2})$/);
+        const nm = lines[j].match(/^(-?[\d,]+\.\d{2})$/);
         if (nm) nums.push(parseAmount(nm[1]));
       }
       if (nums.length >= 2) {
@@ -689,7 +906,7 @@ async function parseInvoicePDF(filePath) {
 
     // Inline tax: "Tax  289.87"
     const inlineTax = lines[i].match(
-      /^Tax\s+([\d,]+\.?\d+)$/i
+      /^Tax\s+(-?[\d,]+\.?\d+)$/i
     );
     if (inlineTax) {
       taxAmount = parseAmount(inlineTax[1]);

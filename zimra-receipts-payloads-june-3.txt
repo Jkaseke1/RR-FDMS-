@@ -1,0 +1,427 @@
+================================================================================
+ZIMRA FDMS RECEIPT PAYLOADS - June 3, 2026
+Device ID: 35224 | Taxpayer: Rapid Roots Investment Pvt Ltd
+TIN: 2002054676 | VAT: 220401569
+================================================================================
+
+SUMMARY TABLE
+================================================================================
+| Document  | Type        | Currency | Receipt ID | Counter | Global No |
+|-----------|-------------|----------|------------|---------|-----------|
+| INV0602   | Invoice     | ZWG      | 11056165   | 41      | 41        |
+| INV0603   | Invoice     | USD      | 11056166   | 42      | 42        |
+| CRN0063   | Credit Note | ZWG      | 11056182   | 44      | 44        |
+| CRN0064   | Credit Note | USD      | 11056181   | 43      | 43        |
+================================================================================
+
+Credit Note Links:
+- CRN0063 (ZWG) is linked to original invoice INV0602 (Receipt ID: 11056165)
+- CRN0064 (USD) is linked to original invoice INV0603 (Receipt ID: 11056166)
+
+================================================================================
+1. INV0602 - ZWG INVOICE (Receipt Counter: 41, Receipt ID: 11056165)
+   Customer: Rooneys Hire Services Pvt Ltd-ZWG | TIN: 2000001033
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "ZWG",
+    "receiptCounter": 41,
+    "receiptGlobalNo": 41,
+    "invoiceNo": "INV0602",
+    "receiptDate": "2026-06-03T07:39:25",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": null,
+    "buyerData": {
+      "buyerRegisterName": "Rooneys Hire Services Pvt Ltd-ZWG",
+      "buyerTIN": "2000001033",
+      "VATNumber": "220009947",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "Hatfield",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": null,
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": 121.212,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 1212.12,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 2,
+        "receiptLineHSCode": "31010000",
+        "receiptLineName": "Compost Organic kg",
+        "receiptLinePrice": 100,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 1000,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 3,
+        "receiptLineHSCode": "87049090",
+        "receiptLineName": "Milk UHT",
+        "receiptLinePrice": 10,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 100,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": 187.88,
+        "salesAmountWithTax": 1400
+      },
+      {
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2,
+        "taxAmount": 0,
+        "salesAmountWithTax": 1100
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": 2500
+      }
+    ],
+    "receiptTotal": 2500,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "i00EAAhc/1cgJvlj7gZL1ELy+O+CoXIZiGL/oAyJ5rg=",
+      "signature": "MEQCIEc7hxJajfYyw6c4atgLzvIiaEB7Y4eJick9WoH9mpaxAiBO6/BnULpNh+R35GrStlmkwLi3il6QQ5QE1BXSmDUURA=="
+    }
+  }
+}
+
+================================================================================
+2. INV0603 - USD INVOICE (Receipt Counter: 42, Receipt ID: 11056166)
+   Customer: Rooneys Hire Services Pvt Ltd-USD | TIN: 2000001033
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "USD",
+    "receiptCounter": 42,
+    "receiptGlobalNo": 42,
+    "invoiceNo": "INV0603",
+    "receiptDate": "2026-06-03T07:39:27",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": null,
+    "buyerData": {
+      "buyerRegisterName": "Rooneys Hire Services Pvt Ltd-USD",
+      "buyerTIN": "2000001033",
+      "VATNumber": "220009947",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "Hatfield",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": null,
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": 3.03,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 30.3,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 2,
+        "receiptLineHSCode": "31010000",
+        "receiptLineName": "Compost Organic kg",
+        "receiptLinePrice": 7.5,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 75,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 3,
+        "receiptLineHSCode": "87049090",
+        "receiptLineName": "Milk UHT",
+        "receiptLinePrice": 5,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": 50,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": 4.7,
+        "salesAmountWithTax": 35
+      },
+      {
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2,
+        "taxAmount": 0,
+        "salesAmountWithTax": 125
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": 160
+      }
+    ],
+    "receiptTotal": 160,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "fVEsHpjYt/OuMDTTHqvFa1+JSmDTiTbe02MY5Xc1WkU=",
+      "signature": "MEUCIQCki9gBBTlkR/mpCptFZeb3PTljdYQiK6pQuvmc8aiJbwIgf52UQadhTAc/leBQMrL9u8MXnvXCgkdpVNQ42kvRsr4="
+    }
+  }
+}
+
+================================================================================
+3. CRN0063 - ZWG CREDIT NOTE (Receipt Counter: 44, Receipt ID: 11056182)
+   Linked to original invoice INV0602 (Receipt ID: 11056165)
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "CreditNote",
+    "receiptCurrency": "ZWG",
+    "receiptCounter": 44,
+    "receiptGlobalNo": 44,
+    "invoiceNo": "CRN0063",
+    "receiptDate": "2026-06-03T07:48:17",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": "Credit note reference: CRN0063 | Original invoice: INV0602",
+    "buyerData": {
+      "buyerRegisterName": "Rooneys Hire Services Pvt Ltd-ZWG",
+      "buyerTIN": "2000001033",
+      "VATNumber": "220009947",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "Hatfield",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": {
+      "receiptID": 11056165,
+      "deviceID": 35224,
+      "receiptGlobalNo": 41,
+      "fiscalDayNo": 3,
+      "creditDebitNoteNumber": "CRN0063",
+      "creditDebitNoteDate": "2026-06-03T07:48:17",
+      "creditDebitNoteReason": "Credit note for INV0602"
+    },
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": -121.212,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -1212.12,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 2,
+        "receiptLineHSCode": "31010000",
+        "receiptLineName": "Compost Organic kg",
+        "receiptLinePrice": -100,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -1000,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 3,
+        "receiptLineHSCode": "87049090",
+        "receiptLineName": "Milk UHT",
+        "receiptLinePrice": -10,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -100,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": -187.88,
+        "salesAmountWithTax": -1400
+      },
+      {
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2,
+        "taxAmount": 0,
+        "salesAmountWithTax": -1100
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": -2500
+      }
+    ],
+    "receiptTotal": -2500,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "Kz6WTM+w492kUXjcpyWaggfMRFwXOM/MO4wVdKAnkQ0=",
+      "signature": "MEQCIB2VpTYzboPA5jkc6CF1q8Cmt4alUevN77AnH9Dz9UQeAiAaDK1uDPkvn3qz5GR/+qbPwfHEwkuJImMO+5ewZ+yitw=="
+    }
+  }
+}
+
+================================================================================
+4. CRN0064 - USD CREDIT NOTE (Receipt Counter: 43, Receipt ID: 11056181)
+   Linked to original invoice INV0603 (Receipt ID: 11056166)
+================================================================================
+
+{
+  "receipt": {
+    "receiptType": "CreditNote",
+    "receiptCurrency": "USD",
+    "receiptCounter": 43,
+    "receiptGlobalNo": 43,
+    "invoiceNo": "CRN0064",
+    "receiptDate": "2026-06-03T07:48:15",
+    "receiptLinesTaxInclusive": false,
+    "receiptNotes": "Credit note reference: CRN0064 | Original invoice: INV0603",
+    "buyerData": {
+      "buyerRegisterName": "Rooneys Hire Services Pvt Ltd-USD",
+      "buyerTIN": "2000001033",
+      "VATNumber": "220009947",
+      "buyerContacts": null,
+      "buyerAddress": {
+        "province": "Harare",
+        "city": "Harare",
+        "street": "Hatfield",
+        "houseNo": "N/A"
+      }
+    },
+    "creditDebitNote": {
+      "receiptID": 11056166,
+      "deviceID": 35224,
+      "receiptGlobalNo": 42,
+      "fiscalDayNo": 3,
+      "creditDebitNoteNumber": "CRN0064",
+      "creditDebitNoteDate": "2026-06-03T07:48:15",
+      "creditDebitNoteReason": "Credit note for INV0603"
+    },
+    "receiptLines": [
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 1,
+        "receiptLineHSCode": "12092500",
+        "receiptLineName": "Kikuyu Lawn - sqm",
+        "receiptLinePrice": -3.03,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -30.3,
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 2,
+        "receiptLineHSCode": "31010000",
+        "receiptLineName": "Compost Organic kg",
+        "receiptLinePrice": -7.5,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -75,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      },
+      {
+        "receiptLineType": "Sale",
+        "receiptLineNo": 3,
+        "receiptLineHSCode": "87049090",
+        "receiptLineName": "Milk UHT",
+        "receiptLinePrice": -5,
+        "receiptLineQuantity": 10,
+        "receiptLineTotal": -50,
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2
+      }
+    ],
+    "receiptTaxes": [
+      {
+        "taxCode": "A",
+        "taxPercent": 15.5,
+        "taxID": 517,
+        "taxAmount": -4.7,
+        "salesAmountWithTax": -35
+      },
+      {
+        "taxCode": "B",
+        "taxPercent": 0,
+        "taxID": 2,
+        "taxAmount": 0,
+        "salesAmountWithTax": -125
+      }
+    ],
+    "receiptPayments": [
+      {
+        "moneyTypeCode": "Cash",
+        "paymentAmount": -160
+      }
+    ],
+    "receiptTotal": -160,
+    "receiptPrintForm": "Receipt48",
+    "receiptDeviceSignature": {
+      "hash": "Ld5YT8mpSm0NHYSeFl6iwz7qRQYnJUskFJN1JQeJ2+0=",
+      "signature": "MEQCIFGNXa3kAb0cX18tSzvpwuVVmD1DO1VMaQzqQUKzNOOJAiAvSL2naNMKa1f9TodVFY06i4XHtjvYXun8elNr6yBhKA=="
+    }
+  }
+}
+
+================================================================================
+END OF FILE
+================================================================================

@@ -7,12 +7,12 @@ const axios = require('axios');
  */
 
 async function diagnoseDevice() {
-  const deviceId = process.argv[2] || process.env.FDMS_DEVICE_ID || 35224;
-  const activationKey = process.argv[3] || process.env.FDMS_ACTIVATION_KEY || '00374603';
-  const serialNo = process.env.FDMS_DEVICE_SERIAL_NO || 'Rapi-IR-1';
-  const baseUrl = process.env.FDMS_BASE_URL || 'https://fdmsapitest.zimra.co.zw';
-  const modelName = process.env.FDMS_DEVICE_MODEL_NAME || 'RRFDMS';
-  const modelVersion = process.env.FDMS_DEVICE_MODEL_VERSION || '1.0.0';
+  const deviceId = process.argv[2] || process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
+  const activationKey = process.argv[3] || process.env.FDMS_ACTIVATION_KEY;
+  const serialNo = process.env.FDMS_DEVICE_SERIAL_NO || process.env.DEVICE_SERIAL || 'RapidR-1';
+  const baseUrl = process.env.FDMS_BASE_URL || process.env.FDMS_URL;
+  const modelName = process.env.FDMS_DEVICE_MODEL_NAME || 'Server';
+  const modelVersion = process.env.FDMS_DEVICE_MODEL_VERSION || 'v1';
 
   console.log('\n========================================');
   console.log('ZIMRA Device Diagnostic');

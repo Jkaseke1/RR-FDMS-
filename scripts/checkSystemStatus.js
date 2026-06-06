@@ -7,7 +7,7 @@ require('dotenv').config();
 const { getDeviceClient } = require('../src/http/deviceClient');
 const { supabase } = require('../src/db/supabaseClient');
 
-const DEVICE_ID = process.env.FDMS_DEVICE_ID || '35224';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 
 async function checkSystemStatus() {
     console.log('\n' + '='.repeat(70));

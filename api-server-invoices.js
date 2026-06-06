@@ -11,7 +11,7 @@ const { submitReceipt } = require('./src/receipts/submitReceipt');
 
 const app = express();
 const PORT = process.env.INVOICE_API_PORT || 3001;
-const DEVICE_ID = process.env.FDMS_DEVICE_ID || '35224';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));

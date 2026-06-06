@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { getConfig } = require('../src/device/getConfig');
 
 async function syncConfig() {
-  const deviceId = 35224;
+  const deviceId = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
   
   console.log('\n========================================');
   console.log('Syncing Device Configuration');

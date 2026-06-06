@@ -4,9 +4,9 @@ const axios = require('axios');
 const fs = require('fs');
 
 async function testRegisterDevice() {
-  const deviceId = 35224;
-  const activationKey = '00374603';
-  const baseUrl = 'https://fdmsapitest.zimra.co.zw';
+  const deviceId = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
+  const activationKey = process.env.FDMS_ACTIVATION_KEY;
+  const baseUrl = process.env.FDMS_BASE_URL || process.env.FDMS_URL || 'https://fdmsapi.zimra.co.zw';
   
   // Read CSR
   const csrPath = path.join(__dirname, '..', 'certs', 'device.csr.pem');

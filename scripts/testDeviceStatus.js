@@ -8,8 +8,8 @@ const axios = require('axios');
  */
 
 async function testDeviceStatus() {
-  const deviceId = process.argv[2] || process.env.FDMS_DEVICE_ID || 35224;
-  const baseUrl = process.env.FDMS_BASE_URL || 'https://fdmsapitest.zimra.co.zw';
+  const deviceId = process.argv[2] || process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
+  const baseUrl = process.env.FDMS_BASE_URL || process.env.FDMS_URL;
 
   console.log('\n========================================');
   console.log('ZIMRA Device Status Check');

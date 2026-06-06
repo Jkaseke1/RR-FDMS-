@@ -35,7 +35,7 @@ const sqlConfig = {
     }
 };
 
-const DEVICE_ID = process.env.FDMS_DEVICE_ID || '35224';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 const POLL_INTERVAL = parseInt(process.env.FISCALIZATION_POLL_INTERVAL || '10000'); // 10 seconds
 
 let pool;

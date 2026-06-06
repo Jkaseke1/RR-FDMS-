@@ -15,7 +15,7 @@ export const COMPANY = {
   email:      env.VITE_COMPANY_EMAIL      || 'rapidrootszw@gmail.com',
 
   // --- ZIMRA device registration ---
-  deviceId:   env.VITE_DEVICE_ID          || '35224',
+  deviceId:   env.VITE_DEVICE_ID          || '41885',
   serialNo:   env.VITE_DEVICE_SERIAL      || 'RapidR-1',
   tin:        env.VITE_TIN                || '2002054676',
   vatNo:      env.VITE_VAT                || '220401569',
@@ -23,11 +23,11 @@ export const COMPANY = {
 
   // --- Tax configuration ---
   vatRate:    env.VITE_VAT_RATE           || '15.5%',
-  taxIds:     env.VITE_TAX_IDS            || '517 — Standard 15.5% · 2 — Zero rated · 1 — Exempt',
+  taxIds:     env.VITE_TAX_IDS            || '515 — Standard 15.5% · 2 — Zero rated · 3 — Exempt',
 
   // --- Environment ---
-  environment: env.VITE_ENVIRONMENT       || 'TEST',           // TEST or PRODUCTION
-  apiEndpoint: env.VITE_FDMS_ENDPOINT     || 'fdmsapitest.zimra.co.zw',
+  environment: env.VITE_ENVIRONMENT       || 'PRODUCTION',
+  apiEndpoint: env.VITE_FDMS_ENDPOINT     || 'fdmsapi.zimra.co.zw',
 };
 
 export default COMPANY;

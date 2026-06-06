@@ -24,7 +24,7 @@ const SIGNED_DIR = path.join(FDMS_BASE, 'signed');
 const FAILED_DIR = path.join(FDMS_BASE, 'failed');
 const LOGS_DIR = path.join(FDMS_BASE, 'logs');
 
-const DEVICE_ID = process.env.FDMS_DEVICE_ID || '35224';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 const POLL_INTERVAL = parseInt(process.env.FISCALIZATION_POLL_INTERVAL || '10000');
 
 // State file for counters
@@ -88,13 +88,13 @@ function saveState(state) {
 // Sage Tax Code to ZIMRA Tax ID Mapping
 // Zimbabwe VAT Rate: 15.5%
 const TAX_CODE_MAPPING = {
-    1: { zimraTaxId: 1, rate: 15.5, description: 'Output Tax (VAT)' },
-    2: { zimraTaxId: 1, rate: 15.5, description: 'Output Tax Adjustment' },
-    3: { zimraTaxId: 1, rate: 15.5, description: 'Input Tax' },
-    4: { zimraTaxId: 1, rate: 15.5, description: 'Input Tax Capital' },
-    5: { zimraTaxId: 1, rate: 15.5, description: 'Input Tax Adjustment' },
-    6: { zimraTaxId: 2, rate: 0.00, description: 'Zero Rate' },
-    7: { zimraTaxId: 3, rate: 0.00, description: 'Exempt' }
+    1: { zimraTaxId: 517, rate: 15.5, description: 'Output Tax (VAT)' },
+    2: { zimraTaxId: 517, rate: 15.5, description: 'Output Tax Adjustment' },
+    3: { zimraTaxId: 517, rate: 15.5, description: 'Input Tax' },
+    4: { zimraTaxId: 517, rate: 15.5, description: 'Input Tax Capital' },
+    5: { zimraTaxId: 517, rate: 15.5, description: 'Input Tax Adjustment' },
+    6: { zimraTaxId: 2,   rate: 0.00, description: 'Zero Rate' },
+    7: { zimraTaxId: 1,   rate: null, description: 'Exempt' }
 };
 
 /**
@@ -155,8 +155,8 @@ async function syncTaxConfig() {
 
     log('Tax config synced: VAT taxID=' +
       state.taxConfig.vatTaxID +
-      ' Zero taxID=' +
-      state.taxConfig.zeroTaxID, 'INFO');
+      ' Zero taxID=' + state.taxConfig.zeroTaxID +
+      ' Exempt taxID=' + state.taxConfig.exemptTaxID, 'INFO');
 
     return state.taxConfig;
   } catch (err) {
@@ -205,12 +205,12 @@ async function getQrUrlFromZIMRA() {
     );
     return response.data?.qrUrl ||
       process.env.FDMS_BASE_URL ||
-      'https://fdmsapitest.zimra.co.zw';
+      process.env.FDMS_URL;
   } catch (err) {
     log('Could not get qrUrl from ZIMRA config: '
       + err.message, 'WARN');
     return process.env.FDMS_BASE_URL ||
-      'https://fdmsapitest.zimra.co.zw';
+      process.env.FDMS_URL;
   }
 }
 
@@ -575,12 +575,16 @@ async function fiscalizePDF(filename, taxConfig) {
       log('Currency: ' + currency, 'INFO');
     }
 
-    // Build receipt taxes grouped by VAT vs zero-rated
+    // Build receipt taxes grouped by Sage tax code
     const vatLines = pdfData.lineItems.filter(
-      item => item.tax > 0
+      item => item.sageTaxCode === 1 || item.tax > 0
     );
     const zeroLines = pdfData.lineItems.filter(
-      item => item.tax === 0
+      item => item.sageTaxCode === 6 ||
+        (item.tax === 0 && !item.sageTaxCode)
+    );
+    const exemptLines = pdfData.lineItems.filter(
+      item => item.sageTaxCode === 7
     );
 
     const receiptTaxes = [];
@@ -588,14 +592,12 @@ async function fiscalizePDF(filename, taxConfig) {
     if (vatLines.length > 0) {
       const vatSalesTotal = Math.round(
         vatLines.reduce(
-          (s, i) => s + i.totalIncl, 0
+          (s, i) => s + Math.abs(i.totalIncl), 0
         ) * 100
       ) / 100 * sign;
-      // Use per-line tax sum to ensure consistency:
-      // sum(receiptLineTotal) + taxAmount = salesAmountWithTax
       const vatTaxTotal = Math.round(
         vatLines.reduce(
-          (s, i) => s + i.tax, 0
+          (s, i) => s + Math.abs(i.tax), 0
         ) * 100
       ) / 100 * sign;
       receiptTaxes.push({
@@ -610,7 +612,7 @@ async function fiscalizePDF(filename, taxConfig) {
     if (zeroLines.length > 0) {
       const zeroSalesTotal = Math.round(
         zeroLines.reduce(
-          (s, i) => s + i.totalIncl, 0
+          (s, i) => s + Math.abs(i.totalIncl), 0
         ) * 100
       ) / 100 * sign;
       receiptTaxes.push({
@@ -622,18 +624,42 @@ async function fiscalizePDF(filename, taxConfig) {
       });
     }
 
+    if (exemptLines.length > 0) {
+      const exemptSalesTotal = Math.round(
+        exemptLines.reduce(
+          (s, i) => s + Math.abs(i.totalIncl), 0
+        ) * 100
+      ) / 100 * sign;
+      receiptTaxes.push({
+        taxCode: 'C',
+        taxPercent: null,
+        taxID: taxConfig.exemptTaxID,
+        taxAmount: 0,
+        salesAmountWithTax: exemptSalesTotal
+      });
+    }
+
     // Build receipt lines with correct tax per line
     const receiptLines = pdfData.lineItems.map(
       (item, idx) => {
-        const hasVAT = item.tax > 0;
+        const sageCode = item.sageTaxCode ||
+          (item.tax > 0 ? 1 : 6);
+        const mapping = TAX_CODE_MAPPING[sageCode] ||
+          TAX_CODE_MAPPING[1];
         const lineTotal = Math.round(
-          item.totalExcl * 100
+          Math.abs(item.totalExcl) * 100
         ) / 100 * sign;
         const linePrice = item.quantity > 0
           ? Math.round(
-              (lineTotal / item.quantity) * 1000000
-            ) / 1000000
+              (Math.abs(item.totalExcl) / item.quantity) * 1000000
+            ) / 1000000 * sign
           : lineTotal;
+
+        let taxCode;
+        if (sageCode === 1)      taxCode = 'A';
+        else if (sageCode === 6) taxCode = 'B';
+        else if (sageCode === 7) taxCode = 'C';
+        else                     taxCode = item.tax > 0 ? 'A' : 'B';
 
         return {
           receiptLineType: 'Sale',
@@ -644,11 +670,9 @@ async function fiscalizePDF(filename, taxConfig) {
           receiptLinePrice: linePrice,
           receiptLineQuantity: item.quantity,
           receiptLineTotal: lineTotal,
-          taxCode: hasVAT ? 'A' : 'B',
-          taxPercent: hasVAT ? 15.5 : 0,
-          taxID: hasVAT
-            ? taxConfig.vatTaxID
-            : taxConfig.zeroTaxID
+          taxCode,
+          taxPercent: mapping.rate,
+          taxID: mapping.zimraTaxId
         };
       }
     );
@@ -719,7 +743,7 @@ async function fiscalizePDF(filename, taxConfig) {
     const computedTotal = Math.round(
       (linesTotalExcl + taxesTotal) * 100
     ) / 100;
-    const signedTotalIncl = Math.round(totalIncl * 100) / 100 * sign;
+    const signedTotalIncl = Math.round(Math.abs(totalIncl) * 100) / 100 * sign;
 
     log('Lines excl: $' + linesTotalExcl, 'INFO');
     log('Tax total: $' + taxesTotal, 'INFO');
