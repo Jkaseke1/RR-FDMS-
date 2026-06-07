@@ -2,15 +2,23 @@
 description: Server deployment guide for FDMS Bridge on Windows
 ---
 
-# FDMS Bridge - Server Setup Guide
+# FDMS Bridge - Server Setup Guide (GitHub Edition)
 
 ## Overview
 
-This guide covers deploying the FDMS Bridge on a **Windows Server** that will:
+This guide covers deploying the FDMS Bridge from **GitHub** to a **Windows Server**. Changes pushed to the repository can be automatically or manually pulled to the server.
+
+**What the server does:**
 - Watch `C:\FDMS\unsigned\` for new invoice PDFs
 - Fiscalize invoices/credit notes via ZIMRA FDMS API
 - Stamp QR codes on signed PDFs in `C:\FDMS\signed\`
+- Auto-open/close fiscal day daily
 - Print fiscalized invoices automatically
+
+**Deployment Methods:**
+1. **Manual Update** - Run `update.ps1` to pull latest changes
+2. **Auto-Update** - GitHub webhook triggers automatic deployment
+3. **Windows Service** - Runs 24/7, auto-starts on boot
 
 ---
 
@@ -51,21 +59,34 @@ New-Item -ItemType Directory -Force -Path "C:\FDMS\logs"
 
 ---
 
-## 4. Deploy Project Files
+## 4. Deploy from GitHub
 
-### Option A: Copy from development machine
+### Option A: Automated Deploy Script (Recommended)
 
-Copy the entire project folder to the server, e.g.:
+On the server, run the deploy script:
+
+```powershell
+# Download the deploy script
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Jkaseke1/RR-FDMS-/main/server/deploy.ps1" -OutFile "C:\deploy.ps1"
+
+# Run deployment
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process -Force
+C:\deploy.ps1 -InstallDir "C:\FDMS\fdms-bridge"
 ```
-C:\fdms-bridge\
-```
 
-### Option B: Git clone (if using git)
+This will:
+- Clone the repository from GitHub
+- Install all dependencies
+- Create required directories
+- Set up the environment template
+
+### Option B: Manual Git Clone
 
 ```powershell
 cd C:\
-git clone <your-repo-url> fdms-bridge
+git clone https://github.com/Jkaseke1/RR-FDMS-.git fdms-bridge
 cd fdms-bridge
+npm install
 ```
 
 ---
@@ -92,30 +113,34 @@ This installs all required packages including:
 Create a `.env` file in `C:\fdms-bridge\`:
 
 ```env
-# Environment: test or production
+# Environment
 NODE_ENV=production
 
-# FDMS API (use production URL for live)
-FDMS_BASE_URL=https://fdmsapitest.zimra.co.zw
-FDMS_DEVICE_ID=35224
-FDMS_ACTIVATION_KEY=00374603
+# FDMS API (production)
+FDMS_BASE_URL=https://fdmsapi.zimra.co.zw
+FDMS_DEVICE_ID=41885
+FDMS_ACTIVATION_KEY=00904912
 FDMS_DEVICE_SERIAL_NO=RapidR-1
 FDMS_DEVICE_MODEL_NAME=Server
 FDMS_DEVICE_MODEL_VERSION=v1
 
 # Certificates
-FDMS_CERT_PATH=./certs/device.cert.pem
+FDMS_CERT_PATH=./certs/device.crt.pem
 FDMS_KEY_PATH=./certs/device.key.pem
 FDMS_CA_PATH=./certs/fdms-root-ca.pem
-
-# Supabase
-SUPABASE_URL=https://tgqekxawvnlwdjingonh.supabase.co
-SUPABASE_SERVICE_KEY=your-service-key-here
+CERT_PATH=./certs/RapidR-1.p12
+CERT_PASSWORD=rapidroots2024
 
 # Customer (taxpayer) details
 CUSTOMER_TIN=2002054676
 CUSTOMER_VAT=220401569
 CUSTOMER_NAME=Rapid Roots Investment Pvt Ltd
+
+# Directories
+UNSIGNED_DIR=C:\FDMS\unsigned
+SIGNED_DIR=C:\FDMS\signed
+FAILED_DIR=C:\FDMS\failed
+LOGS_DIR=C:\FDMS\logs
 
 # Scheduling
 PING_INTERVAL_MINUTES=5
@@ -123,7 +148,7 @@ CONFIG_REFRESH_HOURS=24
 CERT_RENEWAL_DAYS_BEFORE=30
 ```
 
-> **Important:** Copy your actual `.env` from the dev machine — do NOT use the example values for production.
+> **Important:** Get your actual `.env` from the development machine — do NOT commit `.env` to GitHub.
 
 ---
 
@@ -133,16 +158,72 @@ Ensure these certificate files exist in `C:\fdms-bridge\certs\`:
 
 ```
 certs/
-  device.cert.pem
-  device.key.pem
-  fdms-root-ca.pem
+  device.crt.pem       (production certificate for device 41885)
+  device.key.pem       (private key)
+  fdms-root-ca.pem     (ZIMRA root CA)
+  fdms-chain.pem       (ZIMRA CA chain)
+  RapidR-1.p12         (P12 certificate for service)
 ```
 
-Copy them from your activated development machine.
+**Copy them from your development machine.** Do NOT commit certificates to GitHub — they are already in `.gitignore`.
 
 ---
 
-## 8. Copy State File (Critical for Go-Live)
+## 8. Update from GitHub
+
+After initial deployment, you can update the server anytime you push changes to GitHub.
+
+### Manual Update (Recommended)
+
+Run on the server:
+
+```powershell
+cd C:\FDMS\fdms-bridge
+.\server\update.ps1
+```
+
+This will:
+1. Fetch latest changes from `main` branch
+2. Backup `.env` and `state.json`
+3. Reset code to latest commit
+4. Restore your `.env`
+5. Install any new dependencies
+6. Restart the service
+
+### Check for Updates Without Applying
+
+```powershell
+.\server\update.ps1 -CheckOnly
+```
+
+### Auto-Update via GitHub Webhook (Advanced)
+
+For automatic deployment on every push:
+
+1. **On the server**, start the auto-update listener:
+   ```powershell
+   cd C:\FDMS\fdms-bridge
+   node server\auto-update.js
+   ```
+
+2. **Expose the server** to the internet:
+   - Option A: Use [ngrok](https://ngrok.com/) for testing
+     ```powershell
+     ngrok http 9000
+     ```
+   - Option B: Configure your firewall/router to forward port 9000
+
+3. **In GitHub**, go to Repository → Settings → Webhooks → Add webhook
+   - **Payload URL:** `http://YOUR_SERVER_IP:9000/webhook`
+   - **Content type:** `application/json`
+   - **Events:** Just the push event
+   - Click **Add webhook**
+
+4. Now every push to `main` will automatically update the server!
+
+---
+
+## 9. Copy State File (Critical for Go-Live)
 
 Copy `C:\FDMS\state.json` from your development machine to the server at the same path. This preserves:
 - Receipt counters (so invoice numbers stay sequential)
@@ -153,7 +234,7 @@ Copy `C:\FDMS\state.json` from your development machine to the server at the sam
 
 ---
 
-## 9. Test the Setup
+## 10. Test the Setup
 
 ### 9.1 Check fiscal day status
 ```powershell
@@ -173,42 +254,61 @@ npm run pdf:watch
 
 ---
 
-## 10. Run as Windows Service (Auto-Start)
+## 11. Run as Windows Service (Auto-Start)
 
-Use **NSSM** (Non-Sucking Service Manager) to run the watcher as a Windows service:
+### Option A: Using node-windows (Recommended)
 
-### 10.1 Download NSSM
+The project includes a built-in Windows service setup:
+
 ```powershell
-# Download from https://nssm.cc/download
-# Extract nssm.exe to C:\nssm\
+cd C:\FDMS\fdms-bridge
+node setup-windows-service.js
 ```
 
-### 10.2 Create the Service
+This creates the **FDMSBridge** service that:
+- Auto-starts on boot
+- Runs `index.js` (full fiscalization service)
+- Logs to Windows Event Log
+
+Manage the service:
+```powershell
+# Start
+Start-Service FDMSBridge
+
+# Stop
+Stop-Service FDMSBridge
+
+# Restart (after updates)
+Restart-Service FDMSBridge
+
+# Check status
+Get-Service FDMSBridge
+```
+
+### Option B: Using NSSM (Alternative)
+
+Download NSSM from https://nssm.cc/download and extract to `C:\nssm\`:
+
 ```powershell
 cd C:\nssm
-.\nssm install FDMS-Bridge
+.\nssm install FDMSBridge
 ```
 
 In the NSSM GUI:
 - **Path:** `C:\Program Files\nodejs\node.exe`
-- **Startup directory:** `C:\fdms-bridge`
-- **Arguments:** `src/integrations/pdfFiscalizationService.js watch`
+- **Startup directory:** `C:\FDMS\fdms-bridge`
+- **Arguments:** `index.js`
 
-### 10.3 Configure Service
 ```powershell
-.\nssm set FDMS-Bridge DisplayName "FDMS Bridge Invoice Watcher"
-.\nssm set FDMS-Bridge Description "Watches C:\FDMS\unsigned for invoices and fiscalizes them via ZIMRA"
-.\nssm set FDMS-Bridge Start SERVICE_AUTO_START
-```
-
-### 10.4 Start the Service
-```powershell
-Start-Service FDMS-Bridge
+.\nssm set FDMSBridge DisplayName "FDMS Bridge"
+.\nssm set FDMSBridge Description "Rapid Roots FDMS Fiscalization Service"
+.\nssm set FDMSBridge Start SERVICE_AUTO_START
+Start-Service FDMSBridge
 ```
 
 ---
 
-## 11. Configure Invoice Printing
+## 12. Configure Invoice Printing
 
 The fiscalized PDFs are saved to `C:\FDMS\signed\`. To auto-print:
 
@@ -235,7 +335,7 @@ Schedule it via Task Scheduler every 30 seconds.
 
 ---
 
-## 12. Sage Integration (If Using Sage)
+## 13. Sage Integration (If Using Sage)
 
 If Sage is installed on the same server:
 
@@ -249,7 +349,7 @@ If Sage is on a different machine:
 
 ---
 
-## 13. Backup Strategy
+## 14. Backup Strategy
 
 ### Daily Backup (Critical Files)
 ```powershell
@@ -269,7 +369,7 @@ Copy-Item "C:\fdms-bridge\.env" "C:\FDMS\backups\.env-$(Get-Date -Format 'yyyyMM
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### Service Won't Start
 ```powershell
@@ -277,7 +377,7 @@ Copy-Item "C:\fdms-bridge\.env" "C:\FDMS\backups\.env-$(Get-Date -Format 'yyyyMM
 Get-Content C:\FDMS\logs\error.log -Tail 50
 
 # Check service status
-Get-Service FDMS-Bridge
+Get-Service FDMSBridge
 ```
 
 ### "Fiscal day not open"
@@ -296,7 +396,7 @@ The original invoice wasn't processed on this server. Ensure `state.json` was co
 
 ---
 
-## 15. Go-Live Checklist
+## 16. Go-Live Checklist
 
 Before going live, verify:
 
@@ -337,8 +437,17 @@ npm run device:status
 npm run test-connection
 
 # Restart service
-Restart-Service FDMS-Bridge
+Restart-Service FDMSBridge
 
 # View service logs
-Get-EventLog -LogName Application -Source FDMS-Bridge -Newest 50
+Get-EventLog -LogName Application -Source FDMSBridge -Newest 50
+
+# Update from GitHub
+.\server\update.ps1
+
+# Check for updates (don't apply)
+.\server\update.ps1 -CheckOnly
+
+# Deploy to fresh server
+.\server\deploy.ps1
 ```
