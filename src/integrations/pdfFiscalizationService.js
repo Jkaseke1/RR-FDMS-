@@ -88,11 +88,11 @@ function saveState(state) {
 // Sage Tax Code to ZIMRA Tax ID Mapping
 // Zimbabwe VAT Rate: 15.5%
 const TAX_CODE_MAPPING = {
-    1: { zimraTaxId: 517, rate: 15.5, description: 'Output Tax (VAT)' },
-    2: { zimraTaxId: 517, rate: 15.5, description: 'Output Tax Adjustment' },
-    3: { zimraTaxId: 517, rate: 15.5, description: 'Input Tax' },
-    4: { zimraTaxId: 517, rate: 15.5, description: 'Input Tax Capital' },
-    5: { zimraTaxId: 517, rate: 15.5, description: 'Input Tax Adjustment' },
+    1: { zimraTaxId: 515, rate: 15.5, description: 'Output Tax (VAT)' },
+    2: { zimraTaxId: 515, rate: 15.5, description: 'Output Tax Adjustment' },
+    3: { zimraTaxId: 515, rate: 15.5, description: 'Input Tax' },
+    4: { zimraTaxId: 515, rate: 15.5, description: 'Input Tax Capital' },
+    5: { zimraTaxId: 515, rate: 15.5, description: 'Input Tax Adjustment' },
     6: { zimraTaxId: 2,   rate: 0.00, description: 'Zero Rate' },
     7: { zimraTaxId: 1,   rate: null, description: 'Exempt' }
 };
