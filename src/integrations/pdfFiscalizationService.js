@@ -595,11 +595,13 @@ async function fiscalizePDF(filename, taxConfig) {
           (s, i) => s + Math.abs(i.totalIncl), 0
         ) * 100
       ) / 100 * sign;
+      
+      // Use exact tax amount from Sage PDF to match their rounding
+      // instead of summing line items which may have rounding differences
       const vatTaxTotal = Math.round(
-        vatLines.reduce(
-          (s, i) => s + Math.abs(i.tax), 0
-        ) * 100
+        Math.abs(taxAmount) * 100
       ) / 100 * sign;
+      
       receiptTaxes.push({
         taxCode: 'A',
         taxPercent: 15.5,
