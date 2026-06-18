@@ -88,7 +88,15 @@ async function openFiscalDay() {
     
     const now = new Date();
     const fiscalDayOpened = now.toISOString().split('.')[0]; // YYYY-MM-DDTHH:mm:ss
-    const fiscalDayNo = 1; // First day for new device
+    
+    // Read current fiscal day number from state file
+    const statePath = 'C:\\FDMS\\state.json';
+    let currentFiscalDayNo = 0;
+    if (fs.existsSync(statePath)) {
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      currentFiscalDayNo = state.fiscalDayNo || 0;
+    }
+    const fiscalDayNo = currentFiscalDayNo + 1;
     
     const openOptions = {
       hostname: 'fdmsapi.zimra.co.zw',
