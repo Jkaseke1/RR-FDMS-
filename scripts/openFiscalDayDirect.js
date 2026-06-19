@@ -142,6 +142,11 @@ async function openFiscalDay() {
       state.fiscalDayOpened = fiscalDayOpened;
       state.lastReceiptDate = fiscalDayOpened;
       
+      // Reset counters for new fiscal day
+      state.receiptCounter = 0;
+      state.receiptGlobalNo = 0;
+      state.fiscalCounters = {};
+      
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
       console.log('\n✅ State updated');
       
