@@ -1215,7 +1215,7 @@ async function closeFiscalDay() {
     const deviceClient = getDeviceClient();
 
     const response = await deviceClient.post(
-      `/Device/v1/${DEVICE_ID}/CloseFiscalDay`,
+      `/Device/v1/${DEVICE_ID}/CloseDay`,
       {
         fiscalDayNo: state.fiscalDayNo,
         fiscalDayDate: fiscalDayDate,
@@ -1342,46 +1342,39 @@ async function ensureFiscalDayOpen() {
 }
 
 /**
- * Schedule automatic fiscal day close
+ * Schedule periodic check for fiscal day status
+ * In online mode, ZIMRA auto-closes days after 24 hours
+ * This function checks every hour and auto-opens new days when needed
  */
-function scheduleAutoCloseDay() {
-  const closeTime =
-    process.env.FISCAL_DAY_CLOSE_TIME || '23:00';
-  const [closeHour, closeMinute] =
-    closeTime.split(':').map(Number);
+function scheduleAutoOpenDay() {
+  const checkTime = process.env.FISCAL_DAY_CHECK_TIME || '06:00';
+  const [checkHour, checkMinute] = checkTime.split(':').map(Number);
 
-  log('Auto close day scheduled at: ' +
-    closeTime, 'INFO');
+  log('Auto-open check scheduled at: ' + checkTime + ' (Online Mode)', 'INFO');
+  log('Note: ZIMRA auto-closes days after 24 hours in online mode', 'INFO');
 
-  // Check every minute if it is close time
+  // Check every hour if fiscal day needs to be opened
   setInterval(async () => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
 
-    if (currentHour === closeHour &&
-        currentMinute === closeMinute) {
-
-      log('Auto close day triggered at ' +
-        closeTime, 'INFO');
+    // Only check at the scheduled time
+    if (currentHour === checkHour && currentMinute >= checkMinute && currentMinute < checkMinute + 5) {
+      log('Auto-open check triggered at ' + now.toLocaleTimeString(), 'INFO');
 
       const status = await getFiscalDayStatus();
 
-      if (status?.fiscalDayStatus ===
-          'FiscalDayOpened') {
-        const closed = await closeFiscalDay();
-        if (closed) {
-          log('Fiscal day auto closed ✅',
-            'SUCCESS');
+      if (status?.fiscalDayStatus === 'FiscalDayClosed') {
+        log('Previous fiscal day closed by ZIMRA. Opening new day...', 'INFO');
+        const opened = await openFiscalDay();
+        if (opened) {
+          log('New fiscal day auto-opened ✅', 'SUCCESS');
         } else {
-          log('Auto close failed — retry ' +
-            'manually with npm run closeday',
-            'ERROR');
+          log('Auto-open failed. Please open manually with: node scripts/openFiscalDayDirect.js', 'ERROR');
         }
-      } else {
-        log('Fiscal day already closed or ' +
-          'not in correct state for closing: ' +
-          status?.fiscalDayStatus, 'INFO');
+      } else if (status?.fiscalDayStatus === 'FiscalDayOpened') {
+        log('Fiscal day already open (Day #' + status.lastFiscalDayNo + ')', 'INFO');
       }
     }
   }, 60000); // check every minute
@@ -1414,8 +1407,8 @@ async function watchFolder() {
   log('Using VAT taxID: ' + taxConfig.vatTaxID,
     'INFO');
 
-  // Schedule auto close at configured time
-  scheduleAutoCloseDay();
+  // Schedule auto-open check (online mode: ZIMRA closes days automatically)
+  scheduleAutoOpenDay();
 
   setInterval(async () => {
     try {
