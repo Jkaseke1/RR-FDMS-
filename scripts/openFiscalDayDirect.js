@@ -144,7 +144,7 @@ async function openFiscalDay() {
       
       // Reset counters for new fiscal day
       state.receiptCounter = 0;
-      state.receiptGlobalNo = 0;
+      // Note: receiptGlobalNo continues incrementing - do NOT reset
       state.fiscalCounters = {};
       
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
