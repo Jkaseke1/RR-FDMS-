@@ -884,6 +884,30 @@ async function fiscalizePDF(filename, taxConfig) {
     log('Receipt ID: ' + zimraReceiptId, 'SUCCESS');
     log('Server Date: ' + serverDate, 'SUCCESS');
 
+    // A 200 response can still carry validation errors/warnings. These are
+    // NOT rejections, but ZIMRA flags such receipts (Red/Yellow) and they
+    // block the fiscal day from closing. Surface them so they are not a
+    // silent blind spot only visible in the ZIMRA portal.
+    const acceptedErrors = responseData?.rcptErrors || responseData?.validationErrors;
+    if (Array.isArray(acceptedErrors) && acceptedErrors.length > 0) {
+      log('⚠️ Receipt ACCEPTED BUT FLAGGED by ZIMRA (invoice ' +
+        (isCreditNote ? pdfData.creditNoteNumber : pdfData.invoiceNumber) +
+        ', receiptID ' + zimraReceiptId + '):', 'WARN');
+      for (const err of acceptedErrors) {
+        const code = err.rcptErrorCode || err.errorCode || 'UNKNOWN';
+        const msg = err.rcptErrorMsg || err.message || JSON.stringify(err);
+        log('  [' + code + '] ' + msg, 'WARN');
+      }
+    }
+    const acceptedWarnings = responseData?.rcptWarnings;
+    if (Array.isArray(acceptedWarnings) && acceptedWarnings.length > 0) {
+      for (const warn of acceptedWarnings) {
+        const code = warn.rcptErrorCode || warn.errorCode || 'WARN';
+        const msg = warn.rcptErrorMsg || warn.message || JSON.stringify(warn);
+        log('  (warning) [' + code + '] ' + msg, 'WARN');
+      }
+    }
+
     // Log counters and verification info
     log('Receipt Counter: ' + state.receiptCounter, 'SUCCESS');
     log('Global No: ' + state.receiptGlobalNo, 'SUCCESS');
