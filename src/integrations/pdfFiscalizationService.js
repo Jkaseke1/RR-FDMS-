@@ -510,6 +510,17 @@ async function fiscalizePDF(filename, taxConfig) {
       throw new Error('Invalid amount: $' + totalIncl);
     }
 
+    // Guard: never submit a receipt with no parseable line items.
+    // An empty receipt triggers ZIMRA 162 (no receipt lines) / 172
+    // (no taxes) / 202 (signature) and blocks the fiscal day from closing.
+    // This runs BEFORE counters are incremented so no global number is wasted.
+    if (!pdfData.lineItems || pdfData.lineItems.length === 0) {
+      throw new Error(
+        'No line items parsed from PDF — refusing to submit empty receipt ' +
+        '(would trigger ZIMRA 162/172). Check the PDF parser for this invoice format.'
+      );
+    }
+
     // Load state FIRST to check last receipt date
     const state = loadState();
 
@@ -575,109 +586,105 @@ async function fiscalizePDF(filename, taxConfig) {
       log('Currency: ' + currency, 'INFO');
     }
 
-    // Build receipt taxes grouped by Sage tax code
-    const vatLines = pdfData.lineItems.filter(
-      item => item.sageTaxCode === 1 || item.tax > 0
-    );
-    const zeroLines = pdfData.lineItems.filter(
-      item => item.sageTaxCode === 6 ||
-        (item.tax === 0 && !item.sageTaxCode)
-    );
-    const exemptLines = pdfData.lineItems.filter(
-      item => item.sageTaxCode === 7
-    );
+    // ── Build ZIMRA-compliant taxes & lines ──────────────────────────
+    // ZIMRA recalculates tax from the tax-INCLUSIVE sales total and cross-
+    // validates every figure (errors 262/272/372/382). To satisfy all of
+    // them at once we anchor on the inclusive line totals and DERIVE tax as
+    //   tax = round(salesWithTax * rate / (100 + rate))
+    // We never send Sage's printed per-line tax, whose rounding ZIMRA rejects.
+    const vatRate = taxConfig.vatPercent || taxPercent || 15.5;
+
+    const categoryOf = (item) => {
+      const code = item.sageTaxCode || (item.tax > 0 ? 1 : 6);
+      if (code === 1) return 'A';
+      if (code === 6) return 'B';
+      if (code === 7) return 'C';
+      return item.tax > 0 ? 'A' : 'B';
+    };
+
+    // Tax-table metadata sourced from the ZIMRA-synced config so per-line
+    // and tax-table taxIDs always agree (prevents error 252).
+    const CATEGORY_META = {
+      A: { taxID: taxConfig.vatTaxID,    taxPercent: vatRate, rate: vatRate },
+      B: { taxID: taxConfig.zeroTaxID,   taxPercent: 0,       rate: 0 },
+      C: { taxID: taxConfig.exemptTaxID, taxPercent: null,    rate: 0 }
+    };
+
+    const groups = { A: [], B: [], C: [] };
+    pdfData.lineItems.forEach(item => {
+      groups[categoryOf(item)].push(item);
+    });
 
     const receiptTaxes = [];
+    const receiptLines = [];
+    let lineNo = 0;
+    let receiptTotalAbs = 0;
+    let computedTaxAbs = 0;
 
-    if (vatLines.length > 0) {
-      const vatSalesTotal = Math.round(
-        vatLines.reduce(
-          (s, i) => s + Math.abs(i.totalIncl), 0
-        ) * 100
-      ) / 100 * sign;
-      
-      // Use exact tax amount from Sage PDF to match their rounding
-      // instead of summing line items which may have rounding differences
-      const vatTaxTotal = Math.round(
-        Math.abs(taxAmount) * 100
-      ) / 100 * sign;
-      
+    for (const code of ['A', 'B', 'C']) {
+      const items = groups[code];
+      if (items.length === 0) continue;
+      const meta = CATEGORY_META[code];
+
+      // Anchor: tax-inclusive sales total for this category
+      const salesWithTaxAbs = Math.round(
+        items.reduce((s, i) => s + Math.abs(i.totalIncl), 0) * 100
+      ) / 100;
+
+      // Tax derived exactly the way ZIMRA recalculates it
+      const taxAbs = meta.rate > 0
+        ? Math.round((salesWithTaxAbs * meta.rate / (100 + meta.rate)) * 100) / 100
+        : 0;
+      const netAbs = Math.round((salesWithTaxAbs - taxAbs) * 100) / 100;
+
       receiptTaxes.push({
-        taxCode: 'A',
-        taxPercent: 15.5,
-        taxID: taxConfig.vatTaxID,
-        taxAmount: vatTaxTotal,
-        salesAmountWithTax: vatSalesTotal
+        taxCode: code,
+        taxPercent: meta.taxPercent,
+        taxID: meta.taxID,
+        taxAmount: taxAbs * sign,
+        salesAmountWithTax: salesWithTaxAbs * sign
       });
-    }
 
-    if (zeroLines.length > 0) {
-      const zeroSalesTotal = Math.round(
-        zeroLines.reduce(
-          (s, i) => s + Math.abs(i.totalIncl), 0
-        ) * 100
-      ) / 100 * sign;
-      receiptTaxes.push({
-        taxCode: 'B',
-        taxPercent: 0,
-        taxID: taxConfig.zeroTaxID,
-        taxAmount: 0,
-        salesAmountWithTax: zeroSalesTotal
+      receiptTotalAbs = Math.round((receiptTotalAbs + salesWithTaxAbs) * 100) / 100;
+      computedTaxAbs = Math.round((computedTaxAbs + taxAbs) * 100) / 100;
+
+      // Exclusive line totals must sum EXACTLY to netAbs (error 372).
+      const lineExclAbs = items.map(i => {
+        const inclAbs = Math.round(Math.abs(i.totalIncl) * 100) / 100;
+        return meta.rate > 0
+          ? Math.round((inclAbs * 100 / (100 + meta.rate)) * 100) / 100
+          : inclAbs;
       });
-    }
+      const exclSum = Math.round(lineExclAbs.reduce((s, v) => s + v, 0) * 100) / 100;
+      const residue = Math.round((netAbs - exclSum) * 100) / 100;
+      if (residue !== 0 && lineExclAbs.length > 0) {
+        let maxIdx = 0;
+        for (let i = 1; i < lineExclAbs.length; i++) {
+          if (lineExclAbs[i] > lineExclAbs[maxIdx]) maxIdx = i;
+        }
+        lineExclAbs[maxIdx] = Math.round((lineExclAbs[maxIdx] + residue) * 100) / 100;
+      }
 
-    if (exemptLines.length > 0) {
-      const exemptSalesTotal = Math.round(
-        exemptLines.reduce(
-          (s, i) => s + Math.abs(i.totalIncl), 0
-        ) * 100
-      ) / 100 * sign;
-      receiptTaxes.push({
-        taxCode: 'C',
-        taxPercent: null,
-        taxID: taxConfig.exemptTaxID,
-        taxAmount: 0,
-        salesAmountWithTax: exemptSalesTotal
-      });
-    }
-
-    // Build receipt lines with correct tax per line
-    const receiptLines = pdfData.lineItems.map(
-      (item, idx) => {
-        const sageCode = item.sageTaxCode ||
-          (item.tax > 0 ? 1 : 6);
-        const mapping = TAX_CODE_MAPPING[sageCode] ||
-          TAX_CODE_MAPPING[1];
-        const lineTotal = Math.round(
-          Math.abs(item.totalExcl) * 100
-        ) / 100 * sign;
+      items.forEach((item, i) => {
+        lineNo += 1;
+        const lineExcl = lineExclAbs[i] * sign;
         const linePrice = item.quantity > 0
-          ? Math.round(
-              (Math.abs(item.totalExcl) / item.quantity) * 1000000
-            ) / 1000000 * sign
-          : lineTotal;
-
-        let taxCode;
-        if (sageCode === 1)      taxCode = 'A';
-        else if (sageCode === 6) taxCode = 'B';
-        else if (sageCode === 7) taxCode = 'C';
-        else                     taxCode = item.tax > 0 ? 'A' : 'B';
-
-        return {
+          ? Math.round((lineExclAbs[i] / item.quantity) * 1000000) / 1000000 * sign
+          : lineExcl;
+        receiptLines.push({
           receiptLineType: 'Sale',
-          receiptLineNo: idx + 1,
-          receiptLineHSCode: item.hsCode
-            || '10019900',
+          receiptLineNo: lineNo,
+          receiptLineHSCode: item.hsCode || '10019900',
           receiptLineName: item.description,
           receiptLinePrice: linePrice,
           receiptLineQuantity: item.quantity,
-          receiptLineTotal: lineTotal,
-          taxCode,
-          taxPercent: mapping.rate,
-          taxID: mapping.zimraTaxId
-        };
-      }
-    );
+          receiptLineTotal: lineExcl,
+          taxCode: code,
+          taxPercent: meta.taxPercent,
+          taxID: meta.taxID
+        });
+      });
+    }
 
     // Duplicate check — use credit note number for credit notes
     const dupKey = isCreditNote
@@ -745,7 +752,9 @@ async function fiscalizePDF(filename, taxConfig) {
     const computedTotal = Math.round(
       (linesTotalExcl + taxesTotal) * 100
     ) / 100;
-    const signedTotalIncl = Math.round(Math.abs(totalIncl) * 100) / 100 * sign;
+    // Anchor the receipt total to the sum of tax-inclusive category sales
+    // so it always equals sum(salesAmountWithTax) (error 382 check).
+    const signedTotalIncl = Math.round(receiptTotalAbs * 100) / 100 * sign;
 
     log('Lines excl: $' + linesTotalExcl, 'INFO');
     log('Tax total: $' + taxesTotal, 'INFO');
@@ -935,8 +944,11 @@ async function fiscalizePDF(filename, taxConfig) {
 
     // SaleByTax uses salesAmountWithTax (total incl)
     // Credit notes DECREMENT counters; invoices INCREMENT
-    const counterDelta = isCreditNote ? -totalIncl : totalIncl;
-    const taxDelta = isCreditNote ? -taxAmount : taxAmount;
+    // Use the ZIMRA-computed figures (not Sage's printed ones) so the
+    // day's fiscal counters match the sum of submitted receipts and
+    // CloseDay reconciliation passes.
+    const counterDelta = isCreditNote ? -receiptTotalAbs : receiptTotalAbs;
+    const taxDelta = isCreditNote ? -computedTaxAbs : computedTaxAbs;
 
     currCounters.salesAmountWithTax =
       Math.round(
