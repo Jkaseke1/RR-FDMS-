@@ -1352,6 +1352,18 @@ async function openFiscalDay() {
       }
     );
 
+    // Reset per-day state. The hash chain resets each fiscal day, so the
+    // first receipt of the new day must omit the previous hash (prevents
+    // ZIMRA error 202). receiptGlobalNo intentionally continues.
+    state.fiscalDayNo = response.data.fiscalDayNo;
+    state.fiscalDayStatus = 'FiscalDayOpened';
+    state.fiscalDayOpened = fiscalDayOpened;
+    state.lastReceiptDate = fiscalDayOpened;
+    state.receiptCounter = 0;
+    state.fiscalCounters = {};
+    state.lastReceiptHash = null;
+    saveState(state);
+
     log('Fiscal day opened: ' +
       response.data.fiscalDayNo, 'SUCCESS');
     return true;

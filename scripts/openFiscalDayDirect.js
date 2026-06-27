@@ -146,6 +146,11 @@ async function openFiscalDay() {
       state.receiptCounter = 0;
       // Note: receiptGlobalNo continues incrementing - do NOT reset
       state.fiscalCounters = {};
+      // The receipt hash chain resets every fiscal day: the FIRST receipt of
+      // a new day must carry NO previous hash, or ZIMRA's signature check
+      // fails with error 202. In online mode ZIMRA auto-closes the day, so
+      // closeFiscalDay() (which also clears this) never runs — clear it here.
+      state.lastReceiptHash = null;
       
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
       console.log('\n✅ State updated');
