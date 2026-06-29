@@ -474,6 +474,12 @@ async function fiscalizePDF(filename, taxConfig) {
     return false;
   }
 
+  // Track counter state so a rejected receipt can be rolled back. ZIMRA only
+  // records receipts it accepts; a failed submission must NOT consume a
+  // receiptCounter/receiptGlobalNo, or the next receipt creates a sequence gap.
+  let countersIncremented = false;
+  let receiptAccepted = false;
+
   try {
     log('='.repeat(60), 'INFO');
     log('FISCALIZING: ' + filename, 'INFO');
@@ -542,6 +548,7 @@ async function fiscalizePDF(filename, taxConfig) {
     state.receiptCounter += 1;
     state.receiptGlobalNo += 1;
     saveState(state);
+    countersIncremented = true;
 
     log('Receipt counter: ' + state.receiptCounter, 'INFO');
     log('Global No: ' + state.receiptGlobalNo, 'INFO');
@@ -876,6 +883,10 @@ async function fiscalizePDF(filename, taxConfig) {
       { receipt: zimraReceipt }
     );
 
+    // ZIMRA accepted the receipt (the POST did not throw). From here on the
+    // global number IS consumed on ZIMRA and must never be rolled back.
+    receiptAccepted = true;
+
     const responseData = response.data;
     const zimraReceiptId = responseData?.receiptID || responseData?.receiptId || 'UNKNOWN';
     const serverDate = responseData?.serverDate || new Date().toISOString();
@@ -1109,6 +1120,23 @@ async function fiscalizePDF(filename, taxConfig) {
           log('  [' + code + '] ' + msg, 'WARN');
         }
         log('--- END WARNINGS ---', 'WARN');
+      }
+    }
+
+    // If ZIMRA never accepted this receipt, undo the counter increment so the
+    // next receipt reuses this global number (prevents a sequence gap that
+    // ZIMRA would reject). Skipped when counters were never incremented (e.g.
+    // parse errors) or when the receipt was already accepted by ZIMRA.
+    if (countersIncremented && !receiptAccepted) {
+      try {
+        const s = loadState();
+        if (s.receiptCounter > 0) s.receiptCounter -= 1;
+        if (s.receiptGlobalNo > 0) s.receiptGlobalNo -= 1;
+        saveState(s);
+        log('Rolled back counters (rejected receipt): counter=' +
+          s.receiptCounter + ' globalNo=' + s.receiptGlobalNo, 'WARN');
+      } catch (rbErr) {
+        log('Counter rollback failed: ' + rbErr.message, 'ERROR');
       }
     }
 
