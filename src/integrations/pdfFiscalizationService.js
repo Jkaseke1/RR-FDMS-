@@ -1162,8 +1162,13 @@ async function closeFiscalDay() {
 
     const state = loadState();
     const fc = state.fiscalCounters;
+    // ZIMRA's CloseDay signature uses the date the fiscal day was OPENED
+    // (not today's date). A day opened late at night and closed after
+    // midnight must still report its opening date, or the server-side
+    // signature check fails. Fall back to lastReceiptDate, then today.
     const fiscalDayDate =
-      new Date().toISOString().split('T')[0];
+      (state.fiscalDayOpened || state.lastReceiptDate ||
+        new Date().toISOString()).split('T')[0];
 
     const fiscalCounters = [];
 
@@ -1248,30 +1253,27 @@ async function closeFiscalDay() {
       return aMoney.localeCompare(bMoney);
     });
 
-    // Build hash input per spec 13.3.1
-    const counterStr = fiscalCounters.map(c => {
-      const type = c.fiscalCounterType.toUpperCase();
-      const currency =
-        c.fiscalCounterCurrency.toUpperCase();
-      const taxOrMoney =
-        c.fiscalCounterTaxPercent !== undefined
-          ? Number(c.fiscalCounterTaxPercent)
-              .toFixed(2)
-          : c.fiscalCounterMoneyType.toUpperCase();
-      const valueInCents = Math.round(
-        c.fiscalCounterValue * 100
-      );
-      return type + currency + taxOrMoney +
-        valueInCents;
-    }).join('');
+    // Generate the fiscal day signature (hash + signature) per spec 13.3.1.
+    // ZIMRA's CloseDay requires BOTH fiscalDayDeviceSignature and
+    // receiptCounter; omitting them returns HTTP 400 (missing required
+    // properties: receiptCounter). The signer builds the same sorted counter
+    // hash string and signs it with the device private key (FDMS_KEY_PATH).
+    const { generateFiscalDaySignature } =
+      require('../signatures/fiscalDaySignature');
+    const daySig = generateFiscalDaySignature(
+      {
+        deviceID: parseInt(DEVICE_ID),
+        fiscalDayNo: state.fiscalDayNo,
+        fiscalDayDate: fiscalDayDate
+      },
+      fiscalCounters
+    );
+    log('CloseDay hash input: ' + daySig.hashInput, 'INFO');
 
-    const hashInput =
-      String(parseInt(DEVICE_ID)) +
-      String(state.fiscalDayNo) +
-      fiscalDayDate +
-      counterStr;
-
-    log('CloseDay hash input: ' + hashInput, 'INFO');
+    // receiptCounter = number of receipts issued during this fiscal day
+    // (the per-day counter; it resets to 0 on each OpenDay).
+    const receiptCounter = state.receiptCounter || 0;
+    log('CloseDay receiptCounter: ' + receiptCounter, 'INFO');
 
     // Submit close fiscal day
     const { getDeviceClient } =
@@ -1282,8 +1284,12 @@ async function closeFiscalDay() {
       `/Device/v1/${DEVICE_ID}/CloseDay`,
       {
         fiscalDayNo: state.fiscalDayNo,
-        fiscalDayDate: fiscalDayDate,
-        fiscalCounters: fiscalCounters
+        fiscalDayCounters: fiscalCounters,
+        fiscalDayDeviceSignature: {
+          hash: daySig.hash,
+          signature: daySig.signature
+        },
+        receiptCounter: receiptCounter
       }
     );
 
