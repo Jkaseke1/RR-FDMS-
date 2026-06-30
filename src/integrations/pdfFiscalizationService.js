@@ -95,6 +95,83 @@ function saveState(state) {
   );
 }
 
+function parseTimeHHMM(value, fallback) {
+  const raw = value || fallback;
+  const parts = String(raw).split(':');
+  const hour = Number(parts[0]);
+  const minute = Number(parts[1]);
+  if (Number.isNaN(hour) || Number.isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return parseTimeHHMM(fallback, '00:00');
+  }
+  return { hour, minute, label: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` };
+}
+
+function minutesSinceMidnight(dateObj) {
+  return dateObj.getHours() * 60 + dateObj.getMinutes();
+}
+
+function isWithinBusinessWindow(now, openCfg, closeCfg) {
+  const nowMins = minutesSinceMidnight(now);
+  const openMins = openCfg.hour * 60 + openCfg.minute;
+  const closeMins = closeCfg.hour * 60 + closeCfg.minute;
+  return nowMins >= openMins && nowMins < closeMins;
+}
+
+function hasPendingUnsignedPdfs() {
+  if (!fs.existsSync(UNSIGNED_DIR)) {
+    return false;
+  }
+  return fs.readdirSync(UNSIGNED_DIR)
+    .some(f => f.toLowerCase().endsWith('.pdf'));
+}
+
+function validateCloseAlignment(state, status) {
+  if (!status || !status.fiscalDayStatus) {
+    return {
+      ok: false,
+      reason: 'Could not determine ZIMRA fiscal day status.'
+    };
+  }
+
+  if (status.fiscalDayStatus === 'FiscalDayClosed') {
+    return {
+      ok: false,
+      reason: 'ZIMRA fiscal day is already closed. CloseDay not required.'
+    };
+  }
+
+  if (status.fiscalDayStatus === 'FiscalDayCloseInitiated') {
+    return {
+      ok: false,
+      reason: 'ZIMRA close is already in progress (FiscalDayCloseInitiated).'
+    };
+  }
+
+  if (status.fiscalDayStatus !== 'FiscalDayOpened' && status.fiscalDayStatus !== 'FiscalDayCloseFailed') {
+    return {
+      ok: false,
+      reason: `ZIMRA status ${status.fiscalDayStatus} is not close-eligible.`
+    };
+  }
+
+  const zimraDayNo = Number(status.lastFiscalDayNo);
+  if (!Number.isFinite(zimraDayNo)) {
+    return {
+      ok: false,
+      reason: 'ZIMRA lastFiscalDayNo is missing; refusing to close with uncertain day alignment.'
+    };
+  }
+
+  if (Number(state.fiscalDayNo) !== zimraDayNo) {
+    return {
+      ok: false,
+      reason: `Local fiscalDayNo (${state.fiscalDayNo}) does not match ZIMRA day (${zimraDayNo}). Resync state before close.`
+    };
+  }
+
+  return { ok: true };
+}
+
 // Sage Tax Code to ZIMRA Tax ID Mapping
 // Zimbabwe VAT Rate: 15.5%
 const TAX_CODE_MAPPING = {
@@ -1171,6 +1248,18 @@ async function closeFiscalDay() {
     log('='.repeat(60), 'INFO');
 
     const state = loadState();
+    const statusBeforeClose = await getFiscalDayStatus();
+    const closeAlignment = validateCloseAlignment(state, statusBeforeClose);
+    if (!closeAlignment.ok) {
+      log('CloseDay safeguard blocked request: ' + closeAlignment.reason, 'WARN');
+      return false;
+    }
+
+    if (hasPendingUnsignedPdfs()) {
+      log('CloseDay safeguard blocked request: unsigned PDFs are still pending in ' + UNSIGNED_DIR, 'WARN');
+      return false;
+    }
+
     const fc = state.fiscalCounters;
     // ZIMRA's CloseDay signature uses the date the fiscal day was OPENED
     // (not today's date). A day opened late at night and closed after
@@ -1474,42 +1563,80 @@ async function ensureFiscalDayOpen() {
   return false;
 }
 
-/**
- * Schedule periodic check for fiscal day status
- * In online mode, ZIMRA auto-closes days after 24 hours
- * This function checks every hour and auto-opens new days when needed
- */
-function scheduleAutoOpenDay() {
-  const checkTime = process.env.FISCAL_DAY_CHECK_TIME || '06:00';
-  const [checkHour, checkMinute] = checkTime.split(':').map(Number);
+let lifecycleTickRunning = false;
 
-  log('Auto-open check scheduled at: ' + checkTime + ' (Online Mode)', 'INFO');
-  log('Note: ZIMRA auto-closes days after 24 hours in online mode', 'INFO');
+async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
+  if (lifecycleTickRunning) {
+    return;
+  }
+  lifecycleTickRunning = true;
 
-  // Check every hour if fiscal day needs to be opened
-  setInterval(async () => {
+  try {
+    const closeCfg = parseTimeHHMM(process.env.FISCAL_DAY_CLOSE_TIME, '23:55');
+    const openCfg = parseTimeHHMM(process.env.FISCAL_DAY_OPEN_TIME || process.env.FISCAL_DAY_CHECK_TIME, '06:00');
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
 
-    // Only check at the scheduled time
-    if (currentHour === checkHour && currentMinute >= checkMinute && currentMinute < checkMinute + 5) {
-      log('Auto-open check triggered at ' + now.toLocaleTimeString(), 'INFO');
+    const status = await getFiscalDayStatus();
+    if (!status || !status.fiscalDayStatus) {
+      return;
+    }
 
-      const status = await getFiscalDayStatus();
+    const state = loadState();
+    const closeMins = closeCfg.hour * 60 + closeCfg.minute;
+    const nowMins = minutesSinceMidnight(now);
 
-      if (status?.fiscalDayStatus === 'FiscalDayClosed') {
-        log('Previous fiscal day closed by ZIMRA. Opening new day...', 'INFO');
-        const opened = await openFiscalDay();
-        if (opened) {
-          log('New fiscal day auto-opened ✅', 'SUCCESS');
-        } else {
-          log('Auto-open failed. Please open manually with: node scripts/openFiscalDayDirect.js', 'ERROR');
-        }
-      } else if (status?.fiscalDayStatus === 'FiscalDayOpened') {
-        log('Fiscal day already open (Day #' + status.lastFiscalDayNo + ')', 'INFO');
+    const shouldAttemptClose = isStartupCatchup
+      ? nowMins >= closeMins
+      : now.getHours() === closeCfg.hour && now.getMinutes() >= closeCfg.minute && now.getMinutes() < closeCfg.minute + 5;
+
+    if (shouldAttemptClose && (status.fiscalDayStatus === 'FiscalDayOpened' || status.fiscalDayStatus === 'FiscalDayCloseFailed')) {
+      const alignment = validateCloseAlignment(state, status);
+      if (!alignment.ok) {
+        log('Auto-close skipped: ' + alignment.reason, 'WARN');
+      } else if (hasPendingUnsignedPdfs()) {
+        log('Auto-close skipped: unsigned PDFs pending; will retry on next lifecycle tick.', 'WARN');
+      } else {
+        log((isStartupCatchup ? 'Startup catch-up: ' : '') + 'Auto-closing fiscal day...', 'INFO');
+        await closeFiscalDay();
       }
     }
+
+    const statusAfterClose = await getFiscalDayStatus();
+    if (!statusAfterClose || !statusAfterClose.fiscalDayStatus) {
+      return;
+    }
+
+    if (statusAfterClose.fiscalDayStatus === 'FiscalDayClosed' && isWithinBusinessWindow(now, openCfg, closeCfg)) {
+      log((isStartupCatchup ? 'Startup catch-up: ' : '') + 'Auto-opening fiscal day for business window...', 'INFO');
+      await openFiscalDay();
+    }
+  } catch (err) {
+    log('Fiscal day lifecycle tick error: ' + err.message, 'ERROR');
+  } finally {
+    lifecycleTickRunning = false;
+  }
+}
+
+/**
+ * Schedule fiscal day lifecycle checks:
+ * - auto-close near end of day
+ * - auto-open during business window
+ * - startup catch-up when service was offline
+ */
+function scheduleAutoOpenDay() {
+  const closeCfg = parseTimeHHMM(process.env.FISCAL_DAY_CLOSE_TIME, '23:55');
+  const openCfg = parseTimeHHMM(process.env.FISCAL_DAY_OPEN_TIME || process.env.FISCAL_DAY_CHECK_TIME, '06:00');
+
+  log('Fiscal day lifecycle scheduler enabled', 'INFO');
+  log('Auto-close time: ' + closeCfg.label, 'INFO');
+  log('Auto-open time: ' + openCfg.label, 'INFO');
+
+  runFiscalDayLifecycleTick(true).catch(err => {
+    log('Startup catch-up failed: ' + err.message, 'ERROR');
+  });
+
+  setInterval(async () => {
+    await runFiscalDayLifecycleTick(false);
   }, 60000); // check every minute
 }
 
@@ -1540,7 +1667,7 @@ async function watchFolder() {
   log('Using VAT taxID: ' + taxConfig.vatTaxID,
     'INFO');
 
-  // Schedule auto-open check (online mode: ZIMRA closes days automatically)
+  // Schedule auto close/open lifecycle checks
   scheduleAutoOpenDay();
 
   setInterval(async () => {
