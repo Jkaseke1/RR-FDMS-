@@ -7,6 +7,21 @@ const { formatTaxPercent, toCents } = require('./receiptSignature');
  * Fiscal day hash and signature per spec section 13.3.1
  */
 
+// ZIMRA fiscal day counters must be ordered by counter TYPE using this exact
+// priority (NOT alphabetically) before building the hash string, then by
+// currency, then by taxID/moneyType. Sorting alphabetically produces a
+// different string than ZIMRA's canonical reconstruction, which fails the
+// server-side signature check with error code BadCertificateSignature.
+const FISCAL_COUNTER_TYPE_ORDER = {
+  SaleByTax: 1,
+  SaleTaxByTax: 2,
+  CreditNoteByTax: 3,
+  CreditNoteTaxByTax: 4,
+  DebitNoteByTax: 5,
+  DebitNoteTaxByTax: 6,
+  BalanceByMoneyType: 7
+};
+
 /**
  * Build fiscal counter string per spec
  * Sort counters by:
@@ -27,9 +42,11 @@ function buildCounterString(counters) {
 
   // Sort counters
   const sortedCounters = [...nonZeroCounters].sort((a, b) => {
-    // 1. By type
-    if (a.fiscalCounterType !== b.fiscalCounterType) {
-      return a.fiscalCounterType.localeCompare(b.fiscalCounterType);
+    // 1. By type (ZIMRA priority order, NOT alphabetical)
+    const aOrder = FISCAL_COUNTER_TYPE_ORDER[a.fiscalCounterType] || 99;
+    const bOrder = FISCAL_COUNTER_TYPE_ORDER[b.fiscalCounterType] || 99;
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
     }
     
     // 2. By currency

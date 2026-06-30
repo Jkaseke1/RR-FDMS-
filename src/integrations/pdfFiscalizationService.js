@@ -27,6 +27,16 @@ const LOGS_DIR = path.join(FDMS_BASE, 'logs');
 const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 const POLL_INTERVAL = parseInt(process.env.FISCALIZATION_POLL_INTERVAL || '10000');
 
+const FISCAL_COUNTER_TYPE_ORDER = {
+  SaleByTax: 1,
+  SaleTaxByTax: 2,
+  CreditNoteByTax: 3,
+  CreditNoteTaxByTax: 4,
+  DebitNoteByTax: 5,
+  DebitNoteTaxByTax: 6,
+  BalanceByMoneyType: 7
+};
+
 // State file for counters
 const STATE_FILE = path.join(
   process.env.FDMS_BASE_PATH || 'C:\\FDMS',
@@ -1228,14 +1238,15 @@ async function closeFiscalDay() {
     }
 
     // Sort per spec section 13.3:
-    // fiscalCounterType ASC
-    // fiscalCounterCurrency alpha
-    // fiscalCounterTaxID ASC or moneyType ASC
+    // fiscalCounterType by ZIMRA priority order (not alphabetical),
+    // then fiscalCounterCurrency alpha,
+    // then fiscalCounterTaxID ASC or moneyType ASC.
     fiscalCounters.sort((a, b) => {
       if (a.fiscalCounterType !==
           b.fiscalCounterType) {
-        return a.fiscalCounterType
-          .localeCompare(b.fiscalCounterType);
+        const aOrder = FISCAL_COUNTER_TYPE_ORDER[a.fiscalCounterType] || 99;
+        const bOrder = FISCAL_COUNTER_TYPE_ORDER[b.fiscalCounterType] || 99;
+        return aOrder - bOrder;
       }
       if (a.fiscalCounterCurrency !==
           b.fiscalCounterCurrency) {
@@ -1293,45 +1304,85 @@ async function closeFiscalDay() {
       }
     );
 
-    log('✅ Fiscal day closed', 'SUCCESS');
+    log('✅ CloseDay accepted by ZIMRA', 'SUCCESS');
     log('Response: ' +
       JSON.stringify(response.data, null, 2),
       'SUCCESS'
     );
 
-    // Reset counters for next day
-    state.fiscalDayNo += 1;
-    state.fiscalCounters = {};
-    state.lastReceiptHash = null;
+    const operationID = response.data?.operationID;
+
+    // CloseDay is asynchronous on ZIMRA side. Mark initiated, then poll status.
+    state.fiscalDayStatus = 'FiscalDayCloseInitiated';
+    if (operationID) {
+      state.closeOperationID = operationID;
+    }
     saveState(state);
 
-    // Schedule auto open for next morning
-    const reopenTime =
-      process.env.FISCAL_DAY_OPEN_TIME || '06:00';
-    const [openHour, openMinute] =
-      reopenTime.split(':').map(Number);
+    const maxAttempts = 10;
+    const pollIntervalMs = 3000;
 
-    log('Next fiscal day will auto open at: ' +
-      reopenTime, 'INFO');
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      const status = await getFiscalDayStatus();
 
-    // One-time check for next day open
-    const reopenCheck = setInterval(async () => {
-      const now = new Date();
-      if (now.getHours() === openHour &&
-          now.getMinutes() === openMinute) {
-
-        clearInterval(reopenCheck);
-        log('Auto opening new fiscal day...', 'INFO');
-
-        const status = await getFiscalDayStatus();
-        if (status?.fiscalDayStatus ===
-            'FiscalDayClosed') {
-          await openFiscalDay();
-        }
+      if (!status || !status.fiscalDayStatus) {
+        log('CloseDay polling ' + attempt + '/' + maxAttempts + ': status unavailable', 'WARN');
+        continue;
       }
-    }, 60000);
 
-    return true;
+      log('CloseDay polling ' + attempt + '/' + maxAttempts + ': ' + status.fiscalDayStatus, 'INFO');
+
+      if (status.fiscalDayStatus === 'FiscalDayClosed') {
+        log('✅ Fiscal day confirmed closed by ZIMRA', 'SUCCESS');
+
+        // Reset counters for next day only after server-side confirmation.
+        state.fiscalDayNo += 1;
+        state.fiscalDayStatus = 'FiscalDayClosed';
+        state.fiscalCounters = {};
+        state.lastReceiptHash = null;
+        saveState(state);
+
+        // Schedule auto open for next morning
+        const reopenTime =
+          process.env.FISCAL_DAY_OPEN_TIME || '06:00';
+        const [openHour, openMinute] =
+          reopenTime.split(':').map(Number);
+
+        log('Next fiscal day will auto open at: ' +
+          reopenTime, 'INFO');
+
+        // One-time check for next day open
+        const reopenCheck = setInterval(async () => {
+          const now = new Date();
+          if (now.getHours() === openHour &&
+              now.getMinutes() === openMinute) {
+
+            clearInterval(reopenCheck);
+            log('Auto opening new fiscal day...', 'INFO');
+
+            const currentStatus = await getFiscalDayStatus();
+            if (currentStatus?.fiscalDayStatus ===
+                'FiscalDayClosed') {
+              await openFiscalDay();
+            }
+          }
+        }, 60000);
+
+        return true;
+      }
+
+      if (status.fiscalDayStatus === 'FiscalDayCloseFailed') {
+        state.fiscalDayStatus = 'FiscalDayCloseFailed';
+        saveState(state);
+        log('❌ Fiscal day close failed at ZIMRA: ' +
+          (status.fiscalDayClosingErrorCode || 'UnknownError'), 'ERROR');
+        return false;
+      }
+    }
+
+    log('⚠️ CloseDay accepted but not finalized yet; state left as FiscalDayCloseInitiated', 'WARN');
+    return false;
   } catch (error) {
     log('❌ CloseFiscalDay failed: ' +
       error.message, 'ERROR');
