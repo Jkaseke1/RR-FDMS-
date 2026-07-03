@@ -1584,9 +1584,20 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
     const state = loadState();
     const closeMins = closeCfg.hour * 60 + closeCfg.minute;
     const nowMins = minutesSinceMidnight(now);
+    const isBusinessWindow = isWithinBusinessWindow(now, openCfg, closeCfg);
+
+    const maxDayHours = parseInt(process.env.MAX_FISCAL_DAY_HOURS, 10) || 24;
+    const hoursSinceOpened = state.fiscalDayOpened
+      ? (now - new Date(state.fiscalDayOpened)) / (1000 * 60 * 60)
+      : 0;
+    const exceededMaxDayHours = isStartupCatchup && hoursSinceOpened >= maxDayHours;
+
+    if (isStartupCatchup && exceededMaxDayHours) {
+      log(`Startup catch-up: fiscal day is ${hoursSinceOpened.toFixed(1)} hours old (max ${maxDayHours}), will close.`, 'INFO');
+    }
 
     const shouldAttemptClose = isStartupCatchup
-      ? nowMins >= closeMins
+      ? (nowMins >= closeMins || exceededMaxDayHours || !isBusinessWindow)
       : now.getHours() === closeCfg.hour && now.getMinutes() >= closeCfg.minute && now.getMinutes() < closeCfg.minute + 5;
 
     if (shouldAttemptClose && (status.fiscalDayStatus === 'FiscalDayOpened' || status.fiscalDayStatus === 'FiscalDayCloseFailed')) {
