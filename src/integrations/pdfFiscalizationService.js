@@ -992,8 +992,8 @@ async function fiscalizePDF(filename, taxConfig) {
         (isCreditNote ? pdfData.creditNoteNumber : pdfData.invoiceNumber) +
         ', receiptID ' + zimraReceiptId + '):', 'WARN');
       for (const err of acceptedErrors) {
-        const code = err.rcptErrorCode || err.errorCode || 'UNKNOWN';
-        const msg = err.rcptErrorMsg || err.message || JSON.stringify(err);
+        const code = err.rcptErrorCode || err.errorCode || err.validationErrorCode || 'UNKNOWN';
+        const msg = err.rcptErrorMsg || err.message || err.validationErrorMessage || JSON.stringify(err);
         log('  [' + code + '] ' + msg, 'WARN');
       }
     }
@@ -1239,13 +1239,40 @@ async function fiscalizePDF(filename, taxConfig) {
 }
 
 /**
- * Close fiscal day per ZIMRA spec section 13
+ * Check if an error is retryable (transient network error)
+ */
+function isRetryableError(error) {
+  const errorMessage = error.message || '';
+  const retryablePatterns = [
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'timeout',
+    'getaddrinfo',
+    'network',
+    'EAI_AGAIN'
+  ];
+  return retryablePatterns.some(pattern => errorMessage.includes(pattern));
+}
+
+/**
+ * Close fiscal day per ZIMRA spec section 13 (with retry logic for transient errors)
  */
 async function closeFiscalDay() {
-  try {
-    log('='.repeat(60), 'INFO');
-    log('CLOSING FISCAL DAY', 'INFO');
-    log('='.repeat(60), 'INFO');
+  const maxRetries = parseInt(process.env.FISCAL_CLOSE_MAX_RETRIES, 10) || 3;
+  const retryDelayMs = parseInt(process.env.FISCAL_CLOSE_RETRY_DELAY_MS, 10) || 5000;
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    try {
+      if (attempt > 0) {
+        log(`Retry attempt ${attempt}/${maxRetries} for fiscal day close...`, 'INFO');
+      }
+
+      log('='.repeat(60), 'INFO');
+      log('CLOSING FISCAL DAY', 'INFO');
+      log('='.repeat(60), 'INFO');
 
     const state = loadState();
     const statusBeforeClose = await getFiscalDayStatus();
@@ -1471,8 +1498,16 @@ async function closeFiscalDay() {
     }
 
     log('⚠️ CloseDay accepted but not finalized yet; state left as FiscalDayCloseInitiated', 'WARN');
-    return false;
+    return true;
   } catch (error) {
+    if (isRetryableError(error) && attempt < maxRetries) {
+      attempt++;
+      const delay = retryDelayMs * attempt; // Exponential backoff
+      log(`CloseFiscalDay failed with retryable error: ${error.message}. Retrying in ${delay}ms...`, 'WARN');
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+
     log('❌ CloseFiscalDay failed: ' +
       error.message, 'ERROR');
     if (error.response?.data) {
@@ -1482,6 +1517,7 @@ async function closeFiscalDay() {
       );
     }
     return false;
+  }
   }
 }
 
