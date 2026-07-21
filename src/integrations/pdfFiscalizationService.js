@@ -1612,9 +1612,16 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
     const openCfg = parseTimeHHMM(process.env.FISCAL_DAY_OPEN_TIME || process.env.FISCAL_DAY_CHECK_TIME, '06:00');
     const now = new Date();
 
-    const status = await getFiscalDayStatus();
-    if (!status || !status.fiscalDayStatus) {
-      return;
+    // Retry getFiscalDayStatus a few times to tolerate transient DNS/network issues
+    let status = null;
+    const statusRetries = 3;
+    for (let i = 0; i <= statusRetries; i++) {
+      status = await getFiscalDayStatus();
+      if (status && status.fiscalDayStatus) break;
+      if (i < statusRetries) {
+        log(`Fiscal day status unavailable, retrying ${i + 1}/${statusRetries}...`, 'WARN');
+        await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+      }
     }
 
     const state = loadState();
@@ -1626,18 +1633,27 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
     const hoursSinceOpened = state.fiscalDayOpened
       ? (now - new Date(state.fiscalDayOpened)) / (1000 * 60 * 60)
       : 0;
-    const exceededMaxDayHours = isStartupCatchup && hoursSinceOpened >= maxDayHours;
+    // Allow catch-up close on any tick if the day is dangerously overdue, not just startup.
+    const exceededMaxDayHours = hoursSinceOpened >= maxDayHours;
 
-    if (isStartupCatchup && exceededMaxDayHours) {
-      log(`Startup catch-up: fiscal day is ${hoursSinceOpened.toFixed(1)} hours old (max ${maxDayHours}), will close.`, 'INFO');
+    if (exceededMaxDayHours) {
+      log(`Fiscal day is ${hoursSinceOpened.toFixed(1)} hours old (max ${maxDayHours}), will attempt close.`, 'INFO');
     }
+
+    // Determine status from cache if ZIMRA is unreachable
+    const effectiveStatus = (status && status.fiscalDayStatus)
+      ? status.fiscalDayStatus
+      : state.fiscalDayStatus;
 
     const shouldAttemptClose = isStartupCatchup
       ? (nowMins >= closeMins || exceededMaxDayHours || !isBusinessWindow)
-      : now.getHours() === closeCfg.hour && now.getMinutes() >= closeCfg.minute && now.getMinutes() < closeCfg.minute + 5;
+      : (now.getHours() === closeCfg.hour && now.getMinutes() >= closeCfg.minute && now.getMinutes() < closeCfg.minute + 5) || exceededMaxDayHours;
 
-    if (shouldAttemptClose && (status.fiscalDayStatus === 'FiscalDayOpened' || status.fiscalDayStatus === 'FiscalDayCloseFailed')) {
-      const alignment = validateCloseAlignment(state, status);
+    if (shouldAttemptClose && (effectiveStatus === 'FiscalDayOpened' || effectiveStatus === 'FiscalDayCloseFailed')) {
+      // If ZIMRA is unreachable, skip alignment validation and attempt close; closeFiscalDay has its own retry logic.
+      const alignment = (status && status.fiscalDayStatus)
+        ? validateCloseAlignment(state, status)
+        : { ok: true };
       if (!alignment.ok) {
         log('Auto-close skipped: ' + alignment.reason, 'WARN');
       } else if (hasPendingUnsignedPdfs()) {
@@ -1648,6 +1664,7 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
       }
     }
 
+    // Re-fetch status after close attempt; if still unreachable, skip auto-open this tick.
     const statusAfterClose = await getFiscalDayStatus();
     if (!statusAfterClose || !statusAfterClose.fiscalDayStatus) {
       return;
