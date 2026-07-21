@@ -57,13 +57,15 @@ for ($i = 1; $i -le 10; $i++) {
     }
     Start-Sleep -Seconds 1
 }
-Write-Log "DNS test results: $successes success, $failures failure" ($failures -gt 0 ? "WARN" : "SUCCESS")
+$dnsLevel = if ($failures -gt 0) { "WARN" } else { "SUCCESS" }
+Write-Log "DNS test results: $successes success, $failures failure" $dnsLevel
 
 # 4. TCP connectivity test
 Write-Log "--- TCP Connectivity Test (port 443) ---" "INFO"
 try {
     $tcp = Test-NetConnection -ComputerName "fdmsapi.zimra.co.zw" -Port 443 -WarningAction SilentlyContinue
-    Write-Log "TCP Test: RemoteAddress=$($tcp.RemoteAddress) TcpTestSucceeded=$($tcp.TcpTestSucceeded)" ($tcp.TcpTestSucceeded ? "SUCCESS" : "ERROR")
+    $tcpLevel = if ($tcp.TcpTestSucceeded) { "SUCCESS" } else { "ERROR" }
+    Write-Log "TCP Test: RemoteAddress=$($tcp.RemoteAddress) TcpTestSucceeded=$($tcp.TcpTestSucceeded)" $tcpLevel
 } catch {
     Write-Log "TCP Test failed: $($_.Exception.Message)" "ERROR"
 }
@@ -73,10 +75,10 @@ Write-Log "--- ARP Table (looking for duplicate IPs) ---" "INFO"
 $arpOutput = arp -a
 $conflictIPs = @("192.168.100.246", "192.168.100.160")
 foreach ($ip in $conflictIPs) {
-    $matches = $arpOutput | Select-String $ip
-    if ($matches) {
+    $arpMatches = $arpOutput | Select-String $ip
+    if ($arpMatches) {
         Write-Log "Found ARP entries for $ip`:" "WARN"
-        $matches | ForEach-Object { Write-Log $_.Line "WARN" }
+        $arpMatches | ForEach-Object { Write-Log $_.Line "WARN" }
     } else {
         Write-Log "No ARP entry found for $ip" "INFO"
     }
@@ -106,7 +108,8 @@ try {
 # 8. Windows Firewall outbound rules
 Write-Log "--- Outbound Firewall Rules (enabled) ---" "INFO"
 $outboundRules = Get-NetFirewallRule | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Outbound' -and $_.Action -eq 'Block' }
-Write-Log "Outbound blocking rules count: $($outboundRules.Count)" ($outboundRules.Count -gt 0 ? "WARN" : "SUCCESS")
+$fwLevel = if ($outboundRules.Count -gt 0) { "WARN" } else { "SUCCESS" }
+Write-Log "Outbound blocking rules count: $($outboundRules.Count)" $fwLevel
 
 # 9. APPLY FIXES (only if switches provided)
 if ($FixDNS) {
