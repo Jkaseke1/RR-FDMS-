@@ -1300,9 +1300,10 @@ async function closeFiscalDay() {
 
     // Reconstruct exact ZIMRA counter accumulators for the current fiscal day
     // ZIMRA requires separate SaleByTax vs CreditNoteByTax counters per spec section 13.3.
+    // Isolate receipts belonging ONLY to the current fiscal day (globalNo > (receiptGlobalNo - receiptCounter))
+    const minGlobalNo = (state.receiptGlobalNo || 0) - (state.receiptCounter || 0);
     const activeInvoices = Object.values(state.processedInvoices || {}).filter(inv => {
-      // Filter invoices processed during current fiscal day
-      return (inv.counter && inv.counter <= state.receiptCounter);
+      return inv.globalNo && inv.globalNo > minGlobalNo;
     });
 
     const currencyCounters = {};
