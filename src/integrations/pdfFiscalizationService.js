@@ -1298,57 +1298,122 @@ async function closeFiscalDay() {
 
     const fiscalCounters = [];
 
-    // Iterate over each currency in fiscalCounters
-    // Now structured as: { USD: {...}, ZWL: {...} }
-    const currencies = Object.keys(fc)
-      .filter(c => ['USD', 'ZWL', 'ZWG', 'ZAR', 'GBP', 'EUR'].includes(c));
+    // Reconstruct exact ZIMRA counter accumulators for the current fiscal day
+    // ZIMRA requires separate SaleByTax vs CreditNoteByTax counters per spec section 13.3.
+    const activeInvoices = Object.values(state.processedInvoices || {}).filter(inv => {
+      // Filter invoices processed during current fiscal day
+      return (inv.counter && inv.counter <= state.receiptCounter);
+    });
 
-    for (const counterCurrency of currencies) {
-      const curr = fc[counterCurrency];
+    const currencyCounters = {};
 
-      log('Building counters for currency: ' + counterCurrency +
-          ' sales=' + (curr.salesAmountWithTax || 0) +
-          ' tax=' + (curr.taxAmount || 0) +
-          ' payment=' + (curr.paymentAmount || 0), 'INFO');
+    activeInvoices.forEach(inv => {
+      const c = inv.currency || 'USD';
+      if (!currencyCounters[c]) {
+        currencyCounters[c] = {
+          salesAmountWithTax: 0,
+          taxAmount: 0,
+          creditNoteAmountWithTax: 0,
+          creditNoteTaxAmount: 0,
+          paymentAmount: 0,
+          taxPercent: 15.5,
+          taxID: state.taxConfig?.vatTaxID || 517
+        };
+      }
+      const acc = currencyCounters[c];
+      (inv.receiptTaxes || []).forEach(t => {
+        if (t.taxID) acc.taxID = t.taxID;
+        if (t.taxPercent !== undefined && t.taxPercent !== null) acc.taxPercent = t.taxPercent;
+        if (t.salesAmountWithTax < 0 || (inv.invoiceNo && inv.invoiceNo.startsWith('CRN'))) {
+          acc.creditNoteAmountWithTax += Math.abs(t.salesAmountWithTax || 0);
+          acc.creditNoteTaxAmount += Math.abs(t.taxAmount || 0);
+          acc.paymentAmount -= Math.abs(t.salesAmountWithTax || 0);
+        } else {
+          acc.salesAmountWithTax += (t.salesAmountWithTax || 0);
+          acc.taxAmount += (t.taxAmount || 0);
+          acc.paymentAmount += (t.salesAmountWithTax || 0);
+        }
+      });
+    });
 
-      // SaleByTax — total sales incl tax
-      if (curr.salesAmountWithTax !== undefined &&
-          Math.abs(curr.salesAmountWithTax) > 0.001) {
+    // Fallback to state.fiscalCounters if currencyCounters empty
+    if (Object.keys(currencyCounters).length === 0 && fc) {
+      Object.keys(fc).forEach(c => {
+        if (['USD', 'ZWL', 'ZWG', 'ZAR', 'GBP', 'EUR'].includes(c)) {
+          currencyCounters[c] = {
+            salesAmountWithTax: fc[c].salesAmountWithTax || 0,
+            taxAmount: fc[c].taxAmount || 0,
+            creditNoteAmountWithTax: fc[c].creditNoteAmountWithTax || 0,
+            creditNoteTaxAmount: fc[c].creditNoteTaxAmount || 0,
+            paymentAmount: fc[c].paymentAmount || (fc[c].salesAmountWithTax || 0),
+            taxPercent: fc[c].taxPercent || 15.5,
+            taxID: state.taxConfig?.vatTaxID || 517
+          };
+        }
+      });
+    }
+
+    for (const counterCurrency of Object.keys(currencyCounters)) {
+      const curr = currencyCounters[counterCurrency];
+
+      log('Building counters for currency ' + counterCurrency +
+          ': sales=' + curr.salesAmountWithTax.toFixed(2) +
+          ' tax=' + curr.taxAmount.toFixed(2) +
+          ' creditSales=' + curr.creditNoteAmountWithTax.toFixed(2) +
+          ' creditTax=' + curr.creditNoteTaxAmount.toFixed(2) +
+          ' payment=' + curr.paymentAmount.toFixed(2), 'INFO');
+
+      // 1. SaleByTax — total gross sales incl tax
+      if (curr.salesAmountWithTax > 0.001) {
         fiscalCounters.push({
           fiscalCounterType: 'SaleByTax',
           fiscalCounterCurrency: counterCurrency,
           fiscalCounterTaxPercent: curr.taxPercent,
-          fiscalCounterTaxID: state.taxConfig?.vatTaxID || 517,
-          fiscalCounterValue: Math.round(
-            curr.salesAmountWithTax * 100
-          ) / 100
+          fiscalCounterTaxID: curr.taxID,
+          fiscalCounterValue: Math.round(curr.salesAmountWithTax * 100) / 100
         });
       }
 
-      // SaleTaxByTax — tax amount only
-      if (curr.taxAmount !== undefined &&
-          Math.abs(curr.taxAmount) > 0.001) {
+      // 2. SaleTaxByTax — gross tax amount
+      if (curr.taxAmount > 0.001) {
         fiscalCounters.push({
           fiscalCounterType: 'SaleTaxByTax',
           fiscalCounterCurrency: counterCurrency,
           fiscalCounterTaxPercent: curr.taxPercent,
-          fiscalCounterTaxID: state.taxConfig?.vatTaxID || 517,
-          fiscalCounterValue: Math.round(
-            curr.taxAmount * 100
-          ) / 100
+          fiscalCounterTaxID: curr.taxID,
+          fiscalCounterValue: Math.round(curr.taxAmount * 100) / 100
         });
       }
 
-      // BalanceByMoneyType — payment amount
-      if (curr.paymentAmount !== undefined &&
-          Math.abs(curr.paymentAmount) > 0.001) {
+      // 3. CreditNoteByTax — credit note sales incl tax
+      if (curr.creditNoteAmountWithTax > 0.001) {
+        fiscalCounters.push({
+          fiscalCounterType: 'CreditNoteByTax',
+          fiscalCounterCurrency: counterCurrency,
+          fiscalCounterTaxPercent: curr.taxPercent,
+          fiscalCounterTaxID: curr.taxID,
+          fiscalCounterValue: Math.round(curr.creditNoteAmountWithTax * 100) / 100
+        });
+      }
+
+      // 4. CreditNoteTaxByTax — credit note tax amount
+      if (curr.creditNoteTaxAmount > 0.001) {
+        fiscalCounters.push({
+          fiscalCounterType: 'CreditNoteTaxByTax',
+          fiscalCounterCurrency: counterCurrency,
+          fiscalCounterTaxPercent: curr.taxPercent,
+          fiscalCounterTaxID: curr.taxID,
+          fiscalCounterValue: Math.round(curr.creditNoteTaxAmount * 100) / 100
+        });
+      }
+
+      // 7. BalanceByMoneyType — net payment amount
+      if (curr.paymentAmount > 0.001) {
         fiscalCounters.push({
           fiscalCounterType: 'BalanceByMoneyType',
           fiscalCounterCurrency: counterCurrency,
           fiscalCounterMoneyType: 'Cash',
-          fiscalCounterValue: Math.round(
-            curr.paymentAmount * 100
-          ) / 100
+          fiscalCounterValue: Math.round(curr.paymentAmount * 100) / 100
         });
       }
     }
