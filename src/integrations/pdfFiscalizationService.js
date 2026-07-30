@@ -1630,14 +1630,18 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
     const isBusinessWindow = isWithinBusinessWindow(now, openCfg, closeCfg);
 
     const maxDayHours = parseInt(process.env.MAX_FISCAL_DAY_HOURS, 10) || 24;
+    const openedDateStr = state.fiscalDayOpened ? new Date(state.fiscalDayOpened).toISOString().split('T')[0] : null;
+    const todayDateStr = now.toISOString().split('T')[0];
+    const isDifferentCalendarDay = openedDateStr && openedDateStr !== todayDateStr;
+
     const hoursSinceOpened = state.fiscalDayOpened
       ? (now - new Date(state.fiscalDayOpened)) / (1000 * 60 * 60)
       : 0;
-    // Allow catch-up close on any tick if the day is dangerously overdue, not just startup.
-    const exceededMaxDayHours = hoursSinceOpened >= maxDayHours;
+    // Allow catch-up close on any tick if the day is from a previous date or exceeds max hours.
+    const exceededMaxDayHours = hoursSinceOpened >= maxDayHours || isDifferentCalendarDay;
 
     if (exceededMaxDayHours) {
-      log(`Fiscal day is ${hoursSinceOpened.toFixed(1)} hours old (max ${maxDayHours}), will attempt close.`, 'INFO');
+      log(`Fiscal day is from ${openedDateStr || 'previous day'} (${hoursSinceOpened.toFixed(1)} hrs old), will attempt close.`, 'INFO');
     }
 
     // Determine status from cache if ZIMRA is unreachable
@@ -1646,7 +1650,7 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
       : state.fiscalDayStatus;
 
     const shouldAttemptClose = isStartupCatchup
-      ? (nowMins >= closeMins || exceededMaxDayHours || !isBusinessWindow)
+      ? (isDifferentCalendarDay || nowMins >= closeMins || exceededMaxDayHours || !isBusinessWindow)
       : (now.getHours() === closeCfg.hour && now.getMinutes() >= closeCfg.minute && now.getMinutes() < closeCfg.minute + 5) || exceededMaxDayHours;
 
     if (shouldAttemptClose && (effectiveStatus === 'FiscalDayOpened' || effectiveStatus === 'FiscalDayCloseFailed')) {
