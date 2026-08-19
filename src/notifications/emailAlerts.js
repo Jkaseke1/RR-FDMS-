@@ -10,11 +10,25 @@ const ALERT_STATE_FILE = path.join(
 
 let transporter;
 
+function provider() {
+  return (process.env.ALERT_EMAIL_PROVIDER || 'smtp').toLowerCase();
+}
+
 function isEnabled() {
-  return process.env.ALERT_EMAIL_ENABLED === 'true' &&
-    Boolean(process.env.ALERT_EMAIL_TO) &&
-    Boolean(process.env.ALERT_SMTP_HOST) &&
-    Boolean(process.env.ALERT_EMAIL_FROM || process.env.ALERT_SMTP_USER);
+  if (process.env.ALERT_EMAIL_ENABLED !== 'true' ||
+      !process.env.ALERT_EMAIL_TO ||
+      !process.env.ALERT_EMAIL_FROM) {
+    return false;
+  }
+
+  if (provider() === 'microsoft-graph') {
+    return Boolean(process.env.ALERT_M365_TENANT_ID) &&
+      Boolean(process.env.ALERT_M365_CLIENT_ID) &&
+      Boolean(process.env.ALERT_M365_CLIENT_SECRET);
+  }
+
+  return Boolean(process.env.ALERT_SMTP_HOST) &&
+    Boolean(process.env.ALERT_SMTP_USER);
 }
 
 function loadAlertState() {
@@ -51,6 +65,66 @@ function getTransporter() {
   return transporter;
 }
 
+function alertText(message, level, deviceID) {
+  return [
+    'FDMS Bridge reported an operational error.',
+    `Device: ${deviceID}`,
+    `Time (UTC): ${new Date().toISOString()}`,
+    `Level: ${level}`,
+    '',
+    message,
+    '',
+    'Check C:\\FDMS\\logs and the FDMS Bridge service on the server.'
+  ].join('\n');
+}
+
+async function sendWithMicrosoftGraph(subject, text) {
+  const tokenBody = new URLSearchParams({
+    client_id: process.env.ALERT_M365_CLIENT_ID,
+    client_secret: process.env.ALERT_M365_CLIENT_SECRET,
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials'
+  });
+  const tokenResponse = await fetch(
+    `https://login.microsoftonline.com/${encodeURIComponent(process.env.ALERT_M365_TENANT_ID)}/oauth2/v2.0/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenBody
+    }
+  );
+  const tokenData = await tokenResponse.json();
+  if (!tokenResponse.ok || !tokenData.access_token) {
+    throw new Error(`Microsoft Graph token request failed: ${tokenData.error_description || tokenResponse.status}`);
+  }
+
+  const toRecipients = process.env.ALERT_EMAIL_TO.split(',')
+    .map(address => address.trim())
+    .filter(Boolean)
+    .map(address => ({ emailAddress: { address } }));
+  const sendResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(process.env.ALERT_EMAIL_FROM)}/sendMail`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'Text', content: text },
+          toRecipients
+        },
+        saveToSentItems: true
+      })
+    }
+  );
+  if (!sendResponse.ok) {
+    throw new Error(`Microsoft Graph send failed: ${await sendResponse.text()}`);
+  }
+}
+
 /**
  * Email an operational error once per configured cooldown window.  The
  * persisted state survives service restarts, preventing repeated scheduler
@@ -77,26 +151,22 @@ async function notifyErrorAlert(message, level = 'ERROR') {
     return { sent: false, reason: 'duplicate alert suppressed' };
   }
 
-  state.sent = state.sent || {};
-  state.sent[key] = { sentAt: now, message, level };
-  saveAlertState(state);
-
   try {
-    await getTransporter().sendMail({
-      from: process.env.ALERT_EMAIL_FROM || process.env.ALERT_SMTP_USER,
-      to: process.env.ALERT_EMAIL_TO,
-      subject: `[FDMS ${deviceID}] ${level}: action required`,
-      text: [
-        'FDMS Bridge reported an operational error.',
-        `Device: ${deviceID}`,
-        `Time (UTC): ${new Date().toISOString()}`,
-        `Level: ${level}`,
-        '',
-        message,
-        '',
-        'Check C:\\FDMS\\logs and the FDMS Bridge service on the server.'
-      ].join('\n')
-    });
+    const subject = `[FDMS ${deviceID}] ${level}: action required`;
+    const text = alertText(message, level, deviceID);
+    if (provider() === 'microsoft-graph') {
+      await sendWithMicrosoftGraph(subject, text);
+    } else {
+      await getTransporter().sendMail({
+        from: process.env.ALERT_EMAIL_FROM,
+        to: process.env.ALERT_EMAIL_TO,
+        subject,
+        text
+      });
+    }
+    state.sent = state.sent || {};
+    state.sent[key] = { sentAt: now, message, level };
+    saveAlertState(state);
     console.log('[FDMS alert] Error email sent.');
     return { sent: true };
   } catch (error) {
