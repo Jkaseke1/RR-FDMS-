@@ -172,6 +172,27 @@ function validateCloseAlignment(state, status) {
   return { ok: true };
 }
 
+/**
+ * Stop the scheduler from resubmitting a fiscal day after ZIMRA has
+ * definitively rejected its CloseDay operation.  An operator can still use
+ * `npm run closeday` after correcting the cause; only automatic retries are
+ * blocked.  Network failures are deliberately not recorded here.
+ */
+function blockAutomaticClose(state, reason, operationID) {
+  state.autoCloseBlockedFiscalDayNo = state.fiscalDayNo;
+  state.autoCloseBlockedReason = reason || 'UnknownError';
+  state.autoCloseBlockedAt = new Date().toISOString();
+  if (operationID) {
+    state.autoCloseBlockedOperationID = operationID;
+  }
+  saveState(state);
+}
+
+function isAutomaticCloseBlocked(state) {
+  return Number(state.autoCloseBlockedFiscalDayNo) ===
+    Number(state.fiscalDayNo);
+}
+
 // Sage Tax Code to ZIMRA Tax ID Mapping
 // Zimbabwe VAT Rate: 15.5%
 const TAX_CODE_MAPPING = {
@@ -1551,6 +1572,10 @@ async function closeFiscalDay() {
         state.fiscalDayStatus = 'FiscalDayClosed';
         state.fiscalCounters = {};
         state.lastReceiptHash = null;
+        delete state.autoCloseBlockedFiscalDayNo;
+        delete state.autoCloseBlockedReason;
+        delete state.autoCloseBlockedAt;
+        delete state.autoCloseBlockedOperationID;
         saveState(state);
 
         // Schedule auto open for next morning
@@ -1584,9 +1609,11 @@ async function closeFiscalDay() {
 
       if (status.fiscalDayStatus === 'FiscalDayCloseFailed') {
         state.fiscalDayStatus = 'FiscalDayCloseFailed';
-        saveState(state);
-        log('❌ Fiscal day close failed at ZIMRA: ' +
-          (status.fiscalDayClosingErrorCode || 'UnknownError'), 'ERROR');
+        const closeFailureReason =
+          status.fiscalDayClosingErrorCode || 'UnknownError';
+        blockAutomaticClose(state, closeFailureReason, operationID);
+        log('❌ Fiscal day close failed at ZIMRA: ' + closeFailureReason +
+          '. Automatic retries are paused until an operator retries after fixing the cause.', 'ERROR');
         return false;
       }
     }
@@ -1602,8 +1629,21 @@ async function closeFiscalDay() {
       continue;
     }
 
-    log('❌ CloseFiscalDay failed: ' +
-      error.message, 'ERROR');
+    // Preserve automatic retries for temporary connectivity failures.  They
+    // are not evidence that ZIMRA rejected the counters, so do not pause the
+    // scheduler after the in-call retry budget is exhausted.
+    if (isRetryableError(error)) {
+      log('❌ CloseFiscalDay could not reach ZIMRA after retries: ' +
+        error.message + '. The scheduler will try again on its next tick.', 'WARN');
+      return false;
+    }
+
+    // Validation/API failures need operator review before another CloseDay is
+    // submitted, otherwise the minute scheduler floods ZIMRA.
+    const failedState = loadState();
+    blockAutomaticClose(failedState, error.message, failedState.closeOperationID);
+    log('❌ CloseFiscalDay failed: ' + error.message +
+      '. Automatic retries are paused until an operator retries after fixing the cause.', 'ERROR');
     if (error.response?.data) {
       log('ZIMRA Error: ' +
         JSON.stringify(error.response.data),
@@ -1666,6 +1706,10 @@ async function openFiscalDay() {
     state.receiptCounter = 0;
     state.fiscalCounters = {};
     state.lastReceiptHash = null;
+    delete state.autoCloseBlockedFiscalDayNo;
+    delete state.autoCloseBlockedReason;
+    delete state.autoCloseBlockedAt;
+    delete state.autoCloseBlockedOperationID;
     saveState(state);
 
     log('Fiscal day opened: ' +
@@ -1752,7 +1796,13 @@ async function runFiscalDayLifecycleTick(isStartupCatchup = false) {
       const alignment = (status && status.fiscalDayStatus)
         ? validateCloseAlignment(state, status)
         : { ok: true };
-      if (!alignment.ok) {
+      if (isAutomaticCloseBlocked(state)) {
+        log('Auto-close paused for fiscal day ' + state.fiscalDayNo +
+          ' after ZIMRA rejected operation ' +
+          (state.autoCloseBlockedOperationID || 'unknown') +
+          ' (' + (state.autoCloseBlockedReason || 'UnknownError') +
+          '). Operator action is required before a manual retry.', 'WARN');
+      } else if (!alignment.ok) {
         log('Auto-close skipped: ' + alignment.reason, 'WARN');
       } else if (hasPendingUnsignedPdfs()) {
         log('Auto-close skipped: unsigned PDFs pending; will retry on next lifecycle tick.', 'WARN');
