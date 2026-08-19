@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { submitReceipt } = require('../receipts/submitReceipt');
 const { parseInvoicePDF } = require('../utils/invoicePdfParser');
 const { createClient } = require('@supabase/supabase-js');
+const { notifyErrorAlert } = require('../notifications/emailAlerts');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -228,6 +229,12 @@ function log(message, level = 'INFO') {
     
     const logFile = path.join(LOGS_DIR, `fiscalization-${new Date().toISOString().split('T')[0]}.log`);
     fs.appendFileSync(logFile, logMessage + '\n');
+
+    if (level === 'ERROR') {
+      // Alerts run asynchronously and are intentionally unable to interrupt
+      // receipt processing, CloseDay handling, or the service watcher.
+      notifyErrorAlert(message, level).catch(() => {});
+    }
 }
 
 async function syncTaxConfig() {
