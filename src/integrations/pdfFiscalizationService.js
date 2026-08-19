@@ -1306,33 +1306,54 @@ async function closeFiscalDay() {
       return inv.globalNo && inv.globalNo > minGlobalNo;
     });
 
+    // Counters are keyed by currency AND tax identity.  Grouping only by
+    // currency merges (for example) VAT and exempt sales into one SaleByTax
+    // counter, which ZIMRA rejects as CountersMismatch.
     const currencyCounters = {};
 
     activeInvoices.forEach(inv => {
-      const c = inv.currency || 'USD';
-      if (!currencyCounters[c]) {
-        currencyCounters[c] = {
-          salesAmountWithTax: 0,
-          taxAmount: 0,
-          creditNoteAmountWithTax: 0,
-          creditNoteTaxAmount: 0,
+      const currency = inv.currency || 'USD';
+      if (!currencyCounters[currency]) {
+        currencyCounters[currency] = {
           paymentAmount: 0,
-          taxPercent: 15.5,
-          taxID: state.taxConfig?.vatTaxID || 517
+          taxes: {}
         };
       }
-      const acc = currencyCounters[c];
+
+      const currencyCounter = currencyCounters[currency];
       (inv.receiptTaxes || []).forEach(t => {
-        if (t.taxID) acc.taxID = t.taxID;
-        if (t.taxPercent !== undefined && t.taxPercent !== null) acc.taxPercent = t.taxPercent;
-        if (t.salesAmountWithTax < 0 || (inv.invoiceNo && inv.invoiceNo.startsWith('CRN'))) {
-          acc.creditNoteAmountWithTax += Math.abs(t.salesAmountWithTax || 0);
-          acc.creditNoteTaxAmount += Math.abs(t.taxAmount || 0);
-          acc.paymentAmount -= Math.abs(t.salesAmountWithTax || 0);
+        // null is significant: it represents an exempt tax whose CloseDay
+        // signature must contain an empty tax-percent value.
+        const taxID = t.taxID === undefined || t.taxID === null
+          ? (state.taxConfig?.vatTaxID || 517)
+          : t.taxID;
+        const taxPercent = t.taxPercent === undefined
+          ? 15.5
+          : t.taxPercent;
+        const taxKey = `${taxID}|${taxPercent === null ? 'null' : taxPercent}`;
+
+        if (!currencyCounter.taxes[taxKey]) {
+          currencyCounter.taxes[taxKey] = {
+            taxID,
+            taxPercent,
+            salesAmountWithTax: 0,
+            taxAmount: 0,
+            creditNoteAmountWithTax: 0,
+            creditNoteTaxAmount: 0
+          };
+        }
+
+        const taxCounter = currencyCounter.taxes[taxKey];
+        const salesAmount = Number(t.salesAmountWithTax) || 0;
+        const taxAmount = Number(t.taxAmount) || 0;
+        if (salesAmount < 0 || (inv.invoiceNo && inv.invoiceNo.startsWith('CRN'))) {
+          taxCounter.creditNoteAmountWithTax += Math.abs(salesAmount);
+          taxCounter.creditNoteTaxAmount += Math.abs(taxAmount);
+          currencyCounter.paymentAmount -= Math.abs(salesAmount);
         } else {
-          acc.salesAmountWithTax += (t.salesAmountWithTax || 0);
-          acc.taxAmount += (t.taxAmount || 0);
-          acc.paymentAmount += (t.salesAmountWithTax || 0);
+          taxCounter.salesAmountWithTax += salesAmount;
+          taxCounter.taxAmount += taxAmount;
+          currencyCounter.paymentAmount += salesAmount;
         }
       });
     });
@@ -1341,14 +1362,20 @@ async function closeFiscalDay() {
     if (Object.keys(currencyCounters).length === 0 && fc) {
       Object.keys(fc).forEach(c => {
         if (['USD', 'ZWL', 'ZWG', 'ZAR', 'GBP', 'EUR'].includes(c)) {
+          const taxID = state.taxConfig?.vatTaxID || 517;
+          const taxPercent = fc[c].taxPercent || 15.5;
           currencyCounters[c] = {
-            salesAmountWithTax: fc[c].salesAmountWithTax || 0,
-            taxAmount: fc[c].taxAmount || 0,
-            creditNoteAmountWithTax: fc[c].creditNoteAmountWithTax || 0,
-            creditNoteTaxAmount: fc[c].creditNoteTaxAmount || 0,
             paymentAmount: fc[c].paymentAmount || (fc[c].salesAmountWithTax || 0),
-            taxPercent: fc[c].taxPercent || 15.5,
-            taxID: state.taxConfig?.vatTaxID || 517
+            taxes: {
+              [`${taxID}|${taxPercent}`]: {
+                taxID,
+                taxPercent,
+                salesAmountWithTax: fc[c].salesAmountWithTax || 0,
+                taxAmount: fc[c].taxAmount || 0,
+                creditNoteAmountWithTax: fc[c].creditNoteAmountWithTax || 0,
+                creditNoteTaxAmount: fc[c].creditNoteTaxAmount || 0
+              }
+            }
           };
         }
       });
@@ -1357,56 +1384,57 @@ async function closeFiscalDay() {
     for (const counterCurrency of Object.keys(currencyCounters)) {
       const curr = currencyCounters[counterCurrency];
 
-      log('Building counters for currency ' + counterCurrency +
-          ': sales=' + curr.salesAmountWithTax.toFixed(2) +
-          ' tax=' + curr.taxAmount.toFixed(2) +
-          ' creditSales=' + curr.creditNoteAmountWithTax.toFixed(2) +
-          ' creditTax=' + curr.creditNoteTaxAmount.toFixed(2) +
-          ' payment=' + curr.paymentAmount.toFixed(2), 'INFO');
+      Object.values(curr.taxes).forEach(tax => {
+        log('Building counters for ' + counterCurrency + ' taxID=' + tax.taxID +
+            ': sales=' + tax.salesAmountWithTax.toFixed(2) +
+            ' tax=' + tax.taxAmount.toFixed(2) +
+            ' creditSales=' + tax.creditNoteAmountWithTax.toFixed(2) +
+            ' creditTax=' + tax.creditNoteTaxAmount.toFixed(2), 'INFO');
 
-      // 1. SaleByTax — total gross sales incl tax
-      if (curr.salesAmountWithTax > 0.001) {
-        fiscalCounters.push({
-          fiscalCounterType: 'SaleByTax',
-          fiscalCounterCurrency: counterCurrency,
-          fiscalCounterTaxPercent: curr.taxPercent,
-          fiscalCounterTaxID: curr.taxID,
-          fiscalCounterValue: Math.round(curr.salesAmountWithTax * 100) / 100
-        });
-      }
+        // 1. SaleByTax — total gross sales incl tax
+        if (tax.salesAmountWithTax > 0.001) {
+          fiscalCounters.push({
+            fiscalCounterType: 'SaleByTax',
+            fiscalCounterCurrency: counterCurrency,
+            fiscalCounterTaxPercent: tax.taxPercent,
+            fiscalCounterTaxID: tax.taxID,
+            fiscalCounterValue: Math.round(tax.salesAmountWithTax * 100) / 100
+          });
+        }
 
-      // 2. SaleTaxByTax — gross tax amount
-      if (curr.taxAmount > 0.001) {
-        fiscalCounters.push({
-          fiscalCounterType: 'SaleTaxByTax',
-          fiscalCounterCurrency: counterCurrency,
-          fiscalCounterTaxPercent: curr.taxPercent,
-          fiscalCounterTaxID: curr.taxID,
-          fiscalCounterValue: Math.round(curr.taxAmount * 100) / 100
-        });
-      }
+        // 2. SaleTaxByTax — gross tax amount
+        if (tax.taxAmount > 0.001) {
+          fiscalCounters.push({
+            fiscalCounterType: 'SaleTaxByTax',
+            fiscalCounterCurrency: counterCurrency,
+            fiscalCounterTaxPercent: tax.taxPercent,
+            fiscalCounterTaxID: tax.taxID,
+            fiscalCounterValue: Math.round(tax.taxAmount * 100) / 100
+          });
+        }
 
-      // 3. CreditNoteByTax — credit note sales incl tax
-      if (curr.creditNoteAmountWithTax > 0.001) {
-        fiscalCounters.push({
-          fiscalCounterType: 'CreditNoteByTax',
-          fiscalCounterCurrency: counterCurrency,
-          fiscalCounterTaxPercent: curr.taxPercent,
-          fiscalCounterTaxID: curr.taxID,
-          fiscalCounterValue: Math.round(curr.creditNoteAmountWithTax * 100) / 100
-        });
-      }
+        // 3. CreditNoteByTax — credit note sales incl tax
+        if (tax.creditNoteAmountWithTax > 0.001) {
+          fiscalCounters.push({
+            fiscalCounterType: 'CreditNoteByTax',
+            fiscalCounterCurrency: counterCurrency,
+            fiscalCounterTaxPercent: tax.taxPercent,
+            fiscalCounterTaxID: tax.taxID,
+            fiscalCounterValue: Math.round(tax.creditNoteAmountWithTax * 100) / 100
+          });
+        }
 
-      // 4. CreditNoteTaxByTax — credit note tax amount
-      if (curr.creditNoteTaxAmount > 0.001) {
-        fiscalCounters.push({
-          fiscalCounterType: 'CreditNoteTaxByTax',
-          fiscalCounterCurrency: counterCurrency,
-          fiscalCounterTaxPercent: curr.taxPercent,
-          fiscalCounterTaxID: curr.taxID,
-          fiscalCounterValue: Math.round(curr.creditNoteTaxAmount * 100) / 100
-        });
-      }
+        // 4. CreditNoteTaxByTax — credit note tax amount
+        if (tax.creditNoteTaxAmount > 0.001) {
+          fiscalCounters.push({
+            fiscalCounterType: 'CreditNoteTaxByTax',
+            fiscalCounterCurrency: counterCurrency,
+            fiscalCounterTaxPercent: tax.taxPercent,
+            fiscalCounterTaxID: tax.taxID,
+            fiscalCounterValue: Math.round(tax.creditNoteTaxAmount * 100) / 100
+          });
+        }
+      });
 
       // 7. BalanceByMoneyType — net payment amount
       if (curr.paymentAmount > 0.001) {
