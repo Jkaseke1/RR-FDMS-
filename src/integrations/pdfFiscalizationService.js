@@ -757,8 +757,6 @@ async function fiscalizePDF(filename, taxConfig) {
       const taxAbs = meta.rate > 0
         ? Math.round((salesWithTaxAbs * meta.rate / (100 + meta.rate)) * 100) / 100
         : 0;
-      const netAbs = Math.round((salesWithTaxAbs - taxAbs) * 100) / 100;
-
       receiptTaxes.push({
         taxCode: code,
         taxPercent: meta.taxPercent,
@@ -770,29 +768,16 @@ async function fiscalizePDF(filename, taxConfig) {
       receiptTotalAbs = Math.round((receiptTotalAbs + salesWithTaxAbs) * 100) / 100;
       computedTaxAbs = Math.round((computedTaxAbs + taxAbs) * 100) / 100;
 
-      // Exclusive line totals must sum EXACTLY to netAbs (error 372).
-      const lineExclAbs = items.map(i => {
-        const inclAbs = Math.round(Math.abs(i.totalIncl) * 100) / 100;
-        return meta.rate > 0
-          ? Math.round((inclAbs * 100 / (100 + meta.rate)) * 100) / 100
-          : inclAbs;
-      });
-      const exclSum = Math.round(lineExclAbs.reduce((s, v) => s + v, 0) * 100) / 100;
-      const residue = Math.round((netAbs - exclSum) * 100) / 100;
-      if (residue !== 0 && lineExclAbs.length > 0) {
-        let maxIdx = 0;
-        for (let i = 1; i < lineExclAbs.length; i++) {
-          if (lineExclAbs[i] > lineExclAbs[maxIdx]) maxIdx = i;
-        }
-        lineExclAbs[maxIdx] = Math.round((lineExclAbs[maxIdx] + residue) * 100) / 100;
-      }
-
-      items.forEach((item, i) => {
+      // The PDF values are tax-inclusive.  Keep the lines tax-inclusive too;
+      // otherwise FDMS applies the tax-exclusive formula to line totals while
+      // receiptTaxes use the inclusive formula (RCPT026/RCPT027).
+      items.forEach(item => {
         lineNo += 1;
-        const lineExcl = lineExclAbs[i] * sign;
+        const lineInclAbs = Math.round(Math.abs(item.totalIncl) * 100) / 100;
+        const lineIncl = lineInclAbs * sign;
         const linePrice = item.quantity > 0
-          ? Math.round((lineExclAbs[i] / item.quantity) * 1000000) / 1000000 * sign
-          : lineExcl;
+          ? Math.round((lineInclAbs / item.quantity) * 1000000) / 1000000 * sign
+          : lineIncl;
         receiptLines.push({
           receiptLineType: 'Sale',
           receiptLineNo: lineNo,
@@ -800,7 +785,7 @@ async function fiscalizePDF(filename, taxConfig) {
           receiptLineName: item.description,
           receiptLinePrice: linePrice,
           receiptLineQuantity: item.quantity,
-          receiptLineTotal: lineExcl,
+          receiptLineTotal: lineIncl,
           taxCode: code,
           taxPercent: meta.taxPercent,
           taxID: meta.taxID
@@ -861,7 +846,7 @@ async function fiscalizePDF(filename, taxConfig) {
     }
 
     // Verify totals
-    const linesTotalExcl = Math.round(
+    const linesTotalIncl = Math.round(
       receiptLines.reduce(
         (s, l) => s + l.receiptLineTotal, 0
       ) * 100
@@ -871,14 +856,12 @@ async function fiscalizePDF(filename, taxConfig) {
         (s, t) => s + t.taxAmount, 0
       ) * 100
     ) / 100;
-    const computedTotal = Math.round(
-      (linesTotalExcl + taxesTotal) * 100
-    ) / 100;
+    const computedTotal = linesTotalIncl;
     // Anchor the receipt total to the sum of tax-inclusive category sales
     // so it always equals sum(salesAmountWithTax) (error 382 check).
     const signedTotalIncl = Math.round(receiptTotalAbs * 100) / 100 * sign;
 
-    log('Lines excl: $' + linesTotalExcl, 'INFO');
+    log('Lines incl: $' + linesTotalIncl, 'INFO');
     log('Tax total: $' + taxesTotal, 'INFO');
     log('Computed total: $' + computedTotal, 'INFO');
     log('PDF total: $' + totalIncl, 'INFO');
@@ -956,7 +939,7 @@ async function fiscalizePDF(filename, taxConfig) {
       : null;
 
     // Build final ZIMRA receipt
-    // receiptLinesTaxInclusive: false because receiptLineTotal values EXCLUDE tax
+    // receiptLineTotal values come from the PDF's tax-inclusive totals.
     const zimraReceipt = {
       receiptType: isCreditNote ? 'CreditNote' : 'FiscalInvoice',
       receiptCurrency: currency,
@@ -964,7 +947,7 @@ async function fiscalizePDF(filename, taxConfig) {
       receiptGlobalNo: state.receiptGlobalNo,
       invoiceNo: isCreditNote ? pdfData.creditNoteNumber : pdfData.invoiceNumber,
       receiptDate: invoiceDate,
-      receiptLinesTaxInclusive: false,
+      receiptLinesTaxInclusive: true,
       receiptNotes: receiptNotes,
       buyerData: buyerData,
       creditDebitNote: creditDebitNote,
