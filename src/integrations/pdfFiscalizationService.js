@@ -1005,7 +1005,10 @@ async function fiscalizePDF(filename, taxConfig) {
       for (const err of acceptedErrors) {
         const code = err.rcptErrorCode || err.errorCode || err.validationErrorCode || 'UNKNOWN';
         const msg = err.rcptErrorMsg || err.message || err.validationErrorMessage || JSON.stringify(err);
-        log('  [' + code + '] ' + msg, 'WARN');
+        const level = String(err.validationErrorColor || '').toUpperCase() === 'RED'
+          ? 'ERROR'
+          : 'WARN';
+        log('  [' + code + '] ' + msg, level);
       }
     }
     const acceptedWarnings = responseData?.rcptWarnings;
