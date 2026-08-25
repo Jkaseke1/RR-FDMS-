@@ -151,6 +151,14 @@ async function openFiscalDay() {
       // fails with error 202. In online mode ZIMRA auto-closes the day, so
       // closeFiscalDay() (which also clears this) never runs — clear it here.
       state.lastReceiptHash = null;
+      delete state.processingBlocked;
+      delete state.processingBlockedReason;
+      delete state.processingBlockedAt;
+      delete state.processingBlockedReceipt;
+      delete state.autoCloseBlockedFiscalDayNo;
+      delete state.autoCloseBlockedReason;
+      delete state.autoCloseBlockedAt;
+      delete state.autoCloseBlockedOperationID;
       
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
       console.log('\n✅ State updated');

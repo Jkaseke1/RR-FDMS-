@@ -194,6 +194,73 @@ function isAutomaticCloseBlocked(state) {
     Number(state.fiscalDayNo);
 }
 
+function getReceiptValidationEntries(responseData) {
+  const entries = [];
+  const sources = [
+    responseData?.rcptErrors,
+    responseData?.validationErrors,
+    responseData?.rcptWarnings
+  ];
+
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const code = item.rcptErrorCode ||
+        item.errorCode ||
+        item.validationErrorCode ||
+        'UNKNOWN';
+      const message = item.rcptErrorMsg ||
+        item.message ||
+        item.validationErrorMessage ||
+        JSON.stringify(item);
+      const color = String(item.validationErrorColor || '').toUpperCase();
+      entries.push({ code, message, color, raw: item });
+    }
+  }
+
+  return entries;
+}
+
+function hasRedReceiptValidation(responseData) {
+  return getReceiptValidationEntries(responseData)
+    .some(entry => entry.color === 'RED');
+}
+
+function blockProcessingAfterRedValidation(state, receiptInfo) {
+  state.processingBlocked = true;
+  state.processingBlockedReason = 'ZIMRA red validation on accepted receipt';
+  state.processingBlockedAt = new Date().toISOString();
+  state.processingBlockedReceipt = receiptInfo;
+  saveState(state);
+}
+
+function isProcessingBlocked(state) {
+  return state.processingBlocked === true;
+}
+
+function clearProcessingBlockForNewDay(state) {
+  delete state.processingBlocked;
+  delete state.processingBlockedReason;
+  delete state.processingBlockedAt;
+  delete state.processingBlockedReceipt;
+}
+
+function allocateReceiptDate(state) {
+  const now = new Date();
+  const fiscalOpened = state.fiscalDayOpened
+    ? new Date(state.fiscalDayOpened)
+    : new Date(0);
+  const lastDate = state.lastReceiptDate
+    ? new Date(state.lastReceiptDate)
+    : fiscalOpened;
+  const minimum = new Date(Math.max(fiscalOpened.getTime(), lastDate.getTime()) + 1000);
+  const chosen = now <= minimum ? minimum : now;
+
+  return chosen.toISOString()
+    .replace('Z', '')
+    .split('.')[0];
+}
+
 // Sage Tax Code to ZIMRA Tax ID Mapping
 // Zimbabwe VAT Rate: 15.5%
 const TAX_CODE_MAPPING = {
@@ -645,19 +712,18 @@ async function fiscalizePDF(filename, taxConfig) {
     // Load state FIRST to check last receipt date
     const state = loadState();
 
-    // Invoice date: must be current time, >= 1 sec after last receipt
-    // ZIMRA requirement: no two receipts can share same timestamp;
-    // must be in strict chronological order with 1-second gaps
-    let invoiceDate = new Date();
-    const lastDate = state.lastReceiptDate
-      ? new Date(state.lastReceiptDate)
-      : new Date(0);
-    if (invoiceDate <= lastDate) {
-      invoiceDate = new Date(lastDate.getTime() + 1000);
+    if (isProcessingBlocked(state)) {
+      throw new Error(
+        'Processing is blocked after a ZIMRA red validation. ' +
+        'Resolve ' + JSON.stringify(state.processingBlockedReceipt || {}) +
+        ' before submitting more receipts.'
+      );
     }
-    invoiceDate = invoiceDate.toISOString()
-      .replace('Z', '')
-      .split('.')[0];
+
+    // ZIMRA requires receipt dates to be strictly sequential and after the
+    // fiscal day opening time. Never use the PDF's backdated invoice date as
+    // the receipt timestamp.
+    const invoiceDate = allocateReceiptDate(state);
 
     // Increment counters
     state.receiptCounter += 1;
@@ -904,18 +970,26 @@ async function fiscalizePDF(filename, taxConfig) {
         log('Linked credit note to original receipt ID: '
           + originalInvoice.zimraReceiptId, 'INFO');
       } else if (pdfData.originalInvoiceNumber) {
-        log('Original invoice ' + pdfData.originalInvoiceNumber
-          + ' not found in state — credit note may fail RCPT032',
-          'WARN');
+        throw new Error(
+          'Original invoice ' + pdfData.originalInvoiceNumber +
+          ' not found in state. Refusing credit note ' +
+          pdfData.creditNoteNumber + ' to prevent RCPT032.'
+        );
+      }
+
+      if (!originalInvoice?.zimraReceiptId &&
+          (!originalInvoice?.globalNo || !originalInvoice?.fiscalDayNo)) {
+        throw new Error(
+          'Credit note ' + pdfData.creditNoteNumber +
+          ' has no usable original receipt reference. Refusing to submit.'
+        );
       }
 
       creditDebitNote = {
         receiptID: originalInvoice?.zimraReceiptId || undefined,
         deviceID: originalInvoice ? parseInt(DEVICE_ID) : undefined,
         receiptGlobalNo: originalInvoice?.globalNo || undefined,
-        fiscalDayNo: originalInvoice
-          ? (state.fiscalDayNo || 1)
-          : undefined,
+        fiscalDayNo: originalInvoice?.fiscalDayNo,
         creditDebitNoteNumber: pdfData.creditNoteNumber,
         creditDebitNoteDate: invoiceDate,
         creditDebitNoteReason: pdfData.originalInvoiceNumber
@@ -997,26 +1071,21 @@ async function fiscalizePDF(filename, taxConfig) {
     // NOT rejections, but ZIMRA flags such receipts (Red/Yellow) and they
     // block the fiscal day from closing. Surface them so they are not a
     // silent blind spot only visible in the ZIMRA portal.
-    const acceptedErrors = responseData?.rcptErrors || responseData?.validationErrors;
-    if (Array.isArray(acceptedErrors) && acceptedErrors.length > 0) {
+    const validationEntries = getReceiptValidationEntries(responseData);
+    const acceptedErrors = validationEntries.filter(e => e.color !== 'YELLOW');
+    if (acceptedErrors.length > 0) {
       log('⚠️ Receipt ACCEPTED BUT FLAGGED by ZIMRA (invoice ' +
         (isCreditNote ? pdfData.creditNoteNumber : pdfData.invoiceNumber) +
         ', receiptID ' + zimraReceiptId + '):', 'WARN');
       for (const err of acceptedErrors) {
-        const code = err.rcptErrorCode || err.errorCode || err.validationErrorCode || 'UNKNOWN';
-        const msg = err.rcptErrorMsg || err.message || err.validationErrorMessage || JSON.stringify(err);
-        const level = String(err.validationErrorColor || '').toUpperCase() === 'RED'
-          ? 'ERROR'
-          : 'WARN';
-        log('  [' + code + '] ' + msg, level);
+        const level = err.color === 'RED' ? 'ERROR' : 'WARN';
+        log('  [' + err.code + '] ' + err.message, level);
       }
     }
-    const acceptedWarnings = responseData?.rcptWarnings;
-    if (Array.isArray(acceptedWarnings) && acceptedWarnings.length > 0) {
+    const acceptedWarnings = validationEntries.filter(e => e.color === 'YELLOW');
+    if (acceptedWarnings.length > 0) {
       for (const warn of acceptedWarnings) {
-        const code = warn.rcptErrorCode || warn.errorCode || 'WARN';
-        const msg = warn.rcptErrorMsg || warn.message || JSON.stringify(warn);
-        log('  (warning) [' + code + '] ' + msg, 'WARN');
+        log('  (warning) [' + warn.code + '] ' + warn.message, 'WARN');
       }
     }
 
@@ -1045,8 +1114,11 @@ async function fiscalizePDF(filename, taxConfig) {
       counter:        state.receiptCounter,
       currency:       currency,
       receiptDate:    invoiceDate,
+      fiscalDayNo:    state.fiscalDayNo || 1,
       previousHash:   state.lastReceiptHash || null,
       receiptTaxes:   receiptTaxes,
+      validationEntries: validationEntries,
+      hasRedValidation: validationEntries.some(e => e.color === 'RED'),
       qrCodeValue:    qrCodeValue,
       signature:      sig.signature,
       fiscalizedAt:   new Date().toISOString()
@@ -1111,6 +1183,22 @@ async function fiscalizePDF(filename, taxConfig) {
     saveState(state2);
     log('Fiscal counters [' + currency + ']: sales=' + currCounters.salesAmountWithTax +
         ' tax=' + currCounters.taxAmount + ' payment=' + currCounters.paymentAmount, 'INFO');
+
+    if (hasRedReceiptValidation(responseData)) {
+      const docNo = isCreditNote ? pdfData.creditNoteNumber : pdfData.invoiceNumber;
+      blockProcessingAfterRedValidation(state2, {
+        invoiceNo: docNo,
+        receiptId: zimraReceiptId,
+        receiptCounter: state.receiptCounter,
+        receiptGlobalNo: state.receiptGlobalNo,
+        fiscalDayNo: state2.fiscalDayNo || state.fiscalDayNo,
+        validationEntries
+      });
+      throw new Error(
+        'ZIMRA accepted receipt ' + docNo +
+        ' but returned RED validation errors. Processing paused to protect fiscal day close.'
+      );
+    }
 
     const docLabel = isCreditNote ? 'Credit Note' : 'Invoice';
     const docNumber = isCreditNote ? pdfData.creditNoteNumber : pdfData.invoiceNumber;
@@ -1434,7 +1522,7 @@ async function closeFiscalDay() {
             fiscalCounterCurrency: counterCurrency,
             fiscalCounterTaxPercent: tax.taxPercent,
             fiscalCounterTaxID: tax.taxID,
-            fiscalCounterValue: Math.round(tax.creditNoteAmountWithTax * 100) / 100
+            fiscalCounterValue: -Math.round(tax.creditNoteAmountWithTax * 100) / 100
           });
         }
 
@@ -1445,7 +1533,7 @@ async function closeFiscalDay() {
             fiscalCounterCurrency: counterCurrency,
             fiscalCounterTaxPercent: tax.taxPercent,
             fiscalCounterTaxID: tax.taxID,
-            fiscalCounterValue: Math.round(tax.creditNoteTaxAmount * 100) / 100
+            fiscalCounterValue: -Math.round(tax.creditNoteTaxAmount * 100) / 100
           });
         }
       });
@@ -1685,7 +1773,7 @@ async function openFiscalDay() {
       `/Device/v1/${DEVICE_ID}/OpenDay`,
       {
         fiscalDayOpened,
-        fiscalDayNo: state.fiscalDayNo
+        fiscalDayNo: (Number(state.fiscalDayNo) || 0) + 1
       }
     );
 
@@ -1699,6 +1787,7 @@ async function openFiscalDay() {
     state.receiptCounter = 0;
     state.fiscalCounters = {};
     state.lastReceiptHash = null;
+    clearProcessingBlockForNewDay(state);
     delete state.autoCloseBlockedFiscalDayNo;
     delete state.autoCloseBlockedReason;
     delete state.autoCloseBlockedAt;
