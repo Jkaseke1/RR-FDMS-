@@ -1762,6 +1762,41 @@ async function openFiscalDay() {
   try {
     log('Opening fiscal day...', 'INFO');
     const state = loadState();
+    const status = await getFiscalDayStatus();
+
+    if (!status) {
+      log('Cannot open fiscal day: could not read ZIMRA status', 'ERROR');
+      return false;
+    }
+
+    if (status.fiscalDayStatus === 'FiscalDayOpened') {
+      state.fiscalDayNo = status.lastFiscalDayNo;
+      state.fiscalDayStatus = 'FiscalDayOpened';
+      if (Number.isFinite(Number(status.lastReceiptGlobalNo))) {
+        state.receiptGlobalNo = Number(status.lastReceiptGlobalNo);
+      }
+      saveState(state);
+      log('Fiscal day already open on ZIMRA; local state synced to day ' +
+        state.fiscalDayNo, 'INFO');
+      return true;
+    }
+
+    if (status.fiscalDayStatus !== 'FiscalDayClosed') {
+      log('Cannot open fiscal day while ZIMRA status is ' +
+        status.fiscalDayStatus +
+        (status.fiscalDayClosingErrorCode
+          ? ': ' + status.fiscalDayClosingErrorCode
+          : ''), 'ERROR');
+      return false;
+    }
+
+    state.fiscalDayNo = Number(status.lastFiscalDayNo) || 0;
+    state.fiscalDayStatus = 'FiscalDayClosed';
+    if (Number.isFinite(Number(status.lastReceiptGlobalNo))) {
+      state.receiptGlobalNo = Number(status.lastReceiptGlobalNo);
+    }
+    saveState(state);
+
     const now = new Date();
     const fiscalDayOpened =
       now.toISOString().split('.')[0];
@@ -1773,7 +1808,7 @@ async function openFiscalDay() {
       `/Device/v1/${DEVICE_ID}/OpenDay`,
       {
         fiscalDayOpened,
-        fiscalDayNo: (Number(state.fiscalDayNo) || 0) + 1
+        fiscalDayNo: state.fiscalDayNo + 1
       }
     );
 

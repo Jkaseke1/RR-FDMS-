@@ -10,7 +10,7 @@ const path = require('path');
 
 require('dotenv').config();
 
-const DEVICE_ID = process.env.DEVICE_ID || '41885';
+const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID || '41885';
 
 function makeRequest(options, postData = null) {
   return new Promise((resolve, reject) => {
@@ -83,20 +83,63 @@ async function openFiscalDay() {
       process.exit(1);
     }
     
+    const statePath = 'C:\\FDMS\\state.json';
+    let state = {};
+    if (fs.existsSync(statePath)) {
+      state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    }
+
+    const getStatusOptions = {
+      ...statusOptions,
+      path: `/Device/v1/${DEVICE_ID}/GetStatus`
+    };
+    const fiscalStatusResult = await makeRequest(getStatusOptions);
+
+    if (fiscalStatusResult.statusCode !== 200) {
+      console.log('❌ Failed to get fiscal day status:', fiscalStatusResult.statusCode);
+      console.log('Response:', JSON.stringify(fiscalStatusResult.data, null, 2));
+      process.exit(1);
+    }
+
+    const fiscalStatus = fiscalStatusResult.data;
+    console.log(`   Fiscal Day Status: ${fiscalStatus.fiscalDayStatus}`);
+    console.log(`   Last Fiscal Day:   ${fiscalStatus.lastFiscalDayNo}`);
+    console.log(`   Last Global No:    ${fiscalStatus.lastReceiptGlobalNo}`);
+
+    if (fiscalStatus.fiscalDayStatus === 'FiscalDayOpened') {
+      state.fiscalDayNo = fiscalStatus.lastFiscalDayNo;
+      state.fiscalDayStatus = 'FiscalDayOpened';
+      if (Number.isFinite(Number(fiscalStatus.lastReceiptGlobalNo))) {
+        state.receiptGlobalNo = Number(fiscalStatus.lastReceiptGlobalNo);
+      }
+      fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+
+      console.log('\n✅ Fiscal day is already open on ZIMRA. Local state synced.');
+      console.log(`   Fiscal Day Number: ${state.fiscalDayNo}`);
+      return;
+    }
+
+    if (fiscalStatus.fiscalDayStatus !== 'FiscalDayClosed') {
+      console.log('\n❌ Cannot open fiscal day while ZIMRA status is:', fiscalStatus.fiscalDayStatus);
+      if (fiscalStatus.fiscalDayClosingErrorCode) {
+        console.log('Closing Error:', fiscalStatus.fiscalDayClosingErrorCode);
+      }
+      process.exit(1);
+    }
+
+    state.fiscalDayNo = Number(fiscalStatus.lastFiscalDayNo) || 0;
+    state.fiscalDayStatus = 'FiscalDayClosed';
+    if (Number.isFinite(Number(fiscalStatus.lastReceiptGlobalNo))) {
+      state.receiptGlobalNo = Number(fiscalStatus.lastReceiptGlobalNo);
+    }
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+
     // Step 2: Open fiscal day
     console.log('\nStep 2: Opening fiscal day...');
-    
+
     const now = new Date();
     const fiscalDayOpened = now.toISOString().split('.')[0]; // YYYY-MM-DDTHH:mm:ss
-    
-    // Read current fiscal day number from state file
-    const statePath = 'C:\\FDMS\\state.json';
-    let currentFiscalDayNo = 0;
-    if (fs.existsSync(statePath)) {
-      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-      currentFiscalDayNo = state.fiscalDayNo || 0;
-    }
-    const fiscalDayNo = currentFiscalDayNo + 1;
+    const fiscalDayNo = state.fiscalDayNo + 1;
     
     const openOptions = {
       hostname: 'fdmsapi.zimra.co.zw',
@@ -131,12 +174,6 @@ async function openFiscalDay() {
       console.log('═'.repeat(60));
       
       // Update state.json
-      const statePath = 'C:\\FDMS\\state.json';
-      let state = {};
-      if (fs.existsSync(statePath)) {
-        state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-      }
-      
       state.fiscalDayNo = openResult.data.fiscalDayNo;
       state.fiscalDayStatus = 'FiscalDayOpened';
       state.fiscalDayOpened = fiscalDayOpened;
