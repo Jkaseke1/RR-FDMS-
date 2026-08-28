@@ -62,6 +62,19 @@ async function parseInvoicePDF(filePath) {
     return parseFloat(str.replace(/,/g, '')) || 0;
   };
 
+  const isAmountToken = (str) =>
+    /^-?[\d,]+(?:\.\d+)?$/.test(str || '');
+
+  const splitJoinedAmounts = (str) => {
+    const matches = String(str || '')
+      .match(/-?[\d,]+\.\d{2}/g);
+    if (matches && matches.length === 2 &&
+        matches.join('') === str) {
+      return matches;
+    }
+    return null;
+  };
+
   function getHsCode(itemCode, description) {
     const descLower = (description || '').toLowerCase();
     const descMap = HS_CODE_MAP.DESCRIPTION_MAP || {};
@@ -743,6 +756,70 @@ async function parseInvoicePDF(filePath) {
         });
       }
       continue;
+    }
+
+    // FORMAT I: visual column order with HS Code before Quantity.
+    // Code Desc HSCode Qty [Unit] Price [Disc] TaxCode Tax TotalIncl
+    // Some Sage templates extract the Tax and Total columns joined together:
+    // "1,409.0910,500.00". Split that pair before parsing.
+    const mI = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/'&,]+?)\s+(\d{8})\s+(.+)$/
+    );
+    if (mI) {
+      const tailTokens = mI[4].trim().split(/\s+/);
+      let taxToken;
+      let totalToken;
+
+      const lastToken = tailTokens.pop();
+      const joinedAmounts = splitJoinedAmounts(lastToken);
+      if (joinedAmounts) {
+        [taxToken, totalToken] = joinedAmounts;
+      } else {
+        totalToken = lastToken;
+        taxToken = tailTokens.pop();
+      }
+
+      const taxCodeToken = tailTokens.pop();
+      const numericTokens = tailTokens.filter(isAmountToken);
+
+      if (numericTokens.length >= 2 &&
+          /^\d+$/.test(taxCodeToken || '') &&
+          isAmountToken(taxToken) &&
+          isAmountToken(totalToken)) {
+        const qty = parseAmount(numericTokens[0]);
+        const lineTax = parseAmount(taxToken);
+        const lineTotalIncl = parseAmount(totalToken);
+        const sageTaxCode = parseInt(taxCodeToken, 10);
+        const lineTotalExcl = Math.round(
+          (lineTotalIncl - lineTax) * 100
+        ) / 100;
+        const priceExcl = qty > 0
+          ? Math.round(
+              (lineTotalExcl / qty) * 10000
+            ) / 10000
+          : 0;
+        const priceIncl = qty > 0
+          ? Math.round(
+              (lineTotalIncl / qty) * 10000
+            ) / 10000
+          : 0;
+
+        if (qty > 0 && lineTotalIncl !== 0) {
+          lineItems.push({
+            itemCode: mI[1].trim(),
+            description: mI[2].trim(),
+            hsCode: mI[3].trim(),
+            quantity: qty,
+            priceIncl,
+            priceExcl,
+            tax: lineTax,
+            sageTaxCode,
+            totalIncl: lineTotalIncl,
+            totalExcl: lineTotalExcl
+          });
+        }
+        continue;
+      }
     }
 
     // FORMAT B: without HS code — 4, 5, or 6 numeric columns
