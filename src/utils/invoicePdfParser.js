@@ -758,7 +758,50 @@ async function parseInvoicePDF(filePath) {
       continue;
     }
 
-    // FORMAT I: visual column order with HS Code before Quantity.
+    // FORMAT I: USD visual column order with HS Code before Quantity.
+    // Code Desc HSCode Qty Price [Disc] TaxCode Tax TotalIncl
+    // Example:
+    // LAWN001 Durban Lawn - sqm 12092500 3,000.00 3.50 1 1,409.09 10,500.00
+    const mIUsd = line.match(
+      /^([A-Z][A-Z0-9]+)\s+([\w\s\-\.\/'&,]+?)\s+(\d{8})\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s+(?:(-?[\d,]+\.?\d*)\s+)?(\d+)\s+(-?[\d,]+\.?\d*)\s+(-?[\d,]+\.?\d*)\s*$/
+    );
+    if (mIUsd) {
+      const qty = parseAmount(mIUsd[4]);
+      const lineTax = parseAmount(mIUsd[8]);
+      const lineTotalIncl = parseAmount(mIUsd[9]);
+      const sageTaxCode = parseInt(mIUsd[7], 10);
+      const lineTotalExcl = Math.round(
+        (lineTotalIncl - lineTax) * 100
+      ) / 100;
+      const priceExcl = qty > 0
+        ? Math.round(
+            (lineTotalExcl / qty) * 10000
+          ) / 10000
+        : 0;
+      const priceIncl = qty > 0
+        ? Math.round(
+            (lineTotalIncl / qty) * 10000
+          ) / 10000
+        : 0;
+
+      if (qty > 0 && lineTotalIncl !== 0) {
+        lineItems.push({
+          itemCode: mIUsd[1].trim(),
+          description: mIUsd[2].trim(),
+          hsCode: mIUsd[3].trim(),
+          quantity: qty,
+          priceIncl,
+          priceExcl,
+          tax: lineTax,
+          sageTaxCode,
+          totalIncl: lineTotalIncl,
+          totalExcl: lineTotalExcl
+        });
+      }
+      continue;
+    }
+
+    // FORMAT I fallback: visual column order with HS Code before Quantity.
     // Code Desc HSCode Qty [Unit] Price [Disc] TaxCode Tax TotalIncl
     // Some Sage templates extract the Tax and Total columns joined together:
     // "1,409.0910,500.00". Split that pair before parsing.
