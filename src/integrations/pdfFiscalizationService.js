@@ -709,6 +709,37 @@ async function fiscalizePDF(filename, taxConfig) {
       );
     }
 
+    const parsedLinesTotalIncl = Math.round(
+      pdfData.lineItems.reduce(
+        (sum, item) => sum + Math.abs(Number(item.totalIncl) || 0),
+        0
+      ) * 100
+    ) / 100;
+    const parsedLinesTax = Math.round(
+      pdfData.lineItems.reduce(
+        (sum, item) => sum + Math.abs(Number(item.tax) || 0),
+        0
+      ) * 100
+    ) / 100;
+    const printedTotalIncl = Math.round(Math.abs(totalIncl) * 100) / 100;
+    const printedTax = Math.round(Math.abs(taxAmount) * 100) / 100;
+
+    if (Math.abs(parsedLinesTotalIncl - printedTotalIncl) > 0.02) {
+      throw new Error(
+        'Parsed line totals do not match PDF total — refusing to submit partial receipt. ' +
+        `Lines total=${parsedLinesTotalIncl.toFixed(2)}, PDF total=${printedTotalIncl.toFixed(2)}. ` +
+        'Check for an invoice line the PDF parser missed.'
+      );
+    }
+
+    if (printedTax > 0 && Math.abs(parsedLinesTax - printedTax) > 0.02) {
+      throw new Error(
+        'Parsed line tax does not match PDF tax — refusing to submit partial receipt. ' +
+        `Lines tax=${parsedLinesTax.toFixed(2)}, PDF tax=${printedTax.toFixed(2)}. ` +
+        'Check for an invoice line the PDF parser missed.'
+      );
+    }
+
     // Load state FIRST to check last receipt date
     const state = loadState();
 
