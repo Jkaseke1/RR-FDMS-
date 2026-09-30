@@ -46,7 +46,7 @@ if (fs.existsSync(STATE_FILE)) {
     failedReceipts: {},
     // Preserve tax config if available
     taxConfig: oldState.taxConfig || {
-      vatTaxID: 517,
+      vatTaxID: 515,
       vatPercent: 15.5,
       zeroTaxID: 2,
       exemptTaxID: 1

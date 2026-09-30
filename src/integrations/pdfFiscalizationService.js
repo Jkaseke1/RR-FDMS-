@@ -12,6 +12,10 @@ const { submitReceipt } = require('../receipts/submitReceipt');
 const { parseInvoicePDF } = require('../utils/invoicePdfParser');
 const { createClient } = require('@supabase/supabase-js');
 const { notifyErrorAlert } = require('../notifications/emailAlerts');
+const {
+  DEFAULT_TAX_CONFIG,
+  resolveTaxConfig
+} = require('./taxConfigResolver');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -24,9 +28,11 @@ const UNSIGNED_DIR = path.join(FDMS_BASE, 'unsigned');
 const SIGNED_DIR = path.join(FDMS_BASE, 'signed');
 const FAILED_DIR = path.join(FDMS_BASE, 'failed');
 const LOGS_DIR = path.join(FDMS_BASE, 'logs');
+const WATCHER_LOCK_FILE = path.join(FDMS_BASE, 'fdms-watcher.lock');
 
 const DEVICE_ID = process.env.FDMS_DEVICE_ID || process.env.DEVICE_ID;
 const POLL_INTERVAL = parseInt(process.env.FISCALIZATION_POLL_INTERVAL || '10000');
+let watcherLockHeld = false;
 
 const FISCAL_COUNTER_TYPE_ORDER = {
   SaleByTax: 1,
@@ -173,6 +179,77 @@ function validateCloseAlignment(state, status) {
   return { ok: true };
 }
 
+function isProcessRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function releaseWatcherLock() {
+  if (!watcherLockHeld) return;
+  try {
+    const lock = JSON.parse(fs.readFileSync(WATCHER_LOCK_FILE, 'utf8'));
+    if (Number(lock.pid) === process.pid) {
+      fs.unlinkSync(WATCHER_LOCK_FILE);
+    }
+  } catch (_) {
+    // The lock may already have been removed during shutdown.
+  }
+  watcherLockHeld = false;
+}
+
+function acquireWatcherLock() {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const fd = fs.openSync(WATCHER_LOCK_FILE, 'wx');
+      fs.writeFileSync(fd, JSON.stringify({
+        pid: process.pid,
+        startedAt: new Date().toISOString()
+      }));
+      fs.closeSync(fd);
+      watcherLockHeld = true;
+      process.once('exit', releaseWatcherLock);
+      process.once('SIGINT', () => {
+        releaseWatcherLock();
+        process.exit(0);
+      });
+      process.once('SIGTERM', () => {
+        releaseWatcherLock();
+        process.exit(0);
+      });
+      return true;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+
+      let existingPID = null;
+      try {
+        existingPID = Number(JSON.parse(
+          fs.readFileSync(WATCHER_LOCK_FILE, 'utf8')
+        ).pid);
+      } catch (_) {
+        // Invalid lock files are treated as stale.
+      }
+
+      if (isProcessRunning(existingPID)) {
+        log('Another FDMS PDF watcher is already running (PID ' +
+          existingPID + '). This process will exit.', 'ERROR');
+        return false;
+      }
+
+      try {
+        fs.unlinkSync(WATCHER_LOCK_FILE);
+      } catch (unlinkErr) {
+        if (unlinkErr.code !== 'ENOENT') throw unlinkErr;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Stop the scheduler from resubmitting a fiscal day after ZIMRA has
  * definitively rejected its CloseDay operation.  An operator can still use
@@ -315,25 +392,17 @@ async function syncTaxConfig() {
     const taxes = response.data?.applicableTaxes
       || [];
 
-    const vatTax = taxes.find(t =>
-      t.taxPercent === 15.5
-    );
-    const zeroTax = taxes.find(t =>
-      t.taxPercent === 0
-    );
-    const exemptTax = taxes.find(t =>
-      !t.taxPercent && t.taxName
-        .toLowerCase().includes('exempt')
-    );
-
     const state = loadState();
-    state.taxConfig = {
-      vatTaxID:     vatTax?.taxID    || 517,
-      vatPercent:   vatTax?.taxPercent || 15.5,
-      zeroTaxID:    zeroTax?.taxID   || 2,
-      exemptTaxID:  exemptTax?.taxID || 1
-    };
+    state.taxConfig = resolveTaxConfig(taxes, {
+      vatTaxID: process.env.FDMS_VAT_TAX_ID ||
+        DEFAULT_TAX_CONFIG.vatTaxID
+    });
     saveState(state);
+
+    if (state.taxConfig.usedVatFallback) {
+      log('GetConfig returned no active 15.5% VAT tax; using configured ' +
+        'VAT taxID=' + state.taxConfig.vatTaxID, 'WARN');
+    }
 
     log('Tax config synced: VAT taxID=' +
       state.taxConfig.vatTaxID +
@@ -344,12 +413,10 @@ async function syncTaxConfig() {
   } catch (err) {
     log('Tax config sync failed: ' +
       err.message + ' — using defaults', 'WARN');
-    return {
-      vatTaxID:    517,
-      vatPercent:  15.5,
-      zeroTaxID:   2,
-      exemptTaxID: 1
-    };
+    return resolveTaxConfig([], {
+      vatTaxID: process.env.FDMS_VAT_TAX_ID ||
+        DEFAULT_TAX_CONFIG.vatTaxID
+    });
   }
 }
 
@@ -1458,7 +1525,7 @@ async function closeFiscalDay() {
         // null is significant: it represents an exempt tax whose CloseDay
         // signature must contain an empty tax-percent value.
         const taxID = t.taxID === undefined || t.taxID === null
-          ? (state.taxConfig?.vatTaxID || 517)
+          ? (state.taxConfig?.vatTaxID || DEFAULT_TAX_CONFIG.vatTaxID)
           : t.taxID;
         const taxPercent = t.taxPercent === undefined
           ? 15.5
@@ -1495,7 +1562,8 @@ async function closeFiscalDay() {
     if (Object.keys(currencyCounters).length === 0 && fc) {
       Object.keys(fc).forEach(c => {
         if (['USD', 'ZWL', 'ZWG', 'ZAR', 'GBP', 'EUR'].includes(c)) {
-          const taxID = state.taxConfig?.vatTaxID || 517;
+          const taxID = state.taxConfig?.vatTaxID ||
+            DEFAULT_TAX_CONFIG.vatTaxID;
           const taxPercent = fc[c].taxPercent || 15.5;
           currencyCounters[c] = {
             paymentAmount: fc[c].paymentAmount || (fc[c].salesAmountWithTax || 0),
@@ -2006,6 +2074,11 @@ function scheduleAutoOpenDay() {
 const processingFiles = new Set();
 
 async function watchFolder() {
+  if (!acquireWatcherLock()) {
+    process.exitCode = 1;
+    return;
+  }
+
   log('PDF FISCALIZATION SERVICE STARTED (PID: ' +
     process.pid + ')', 'INFO');
   log('Watching: ' + UNSIGNED_DIR, 'INFO');
