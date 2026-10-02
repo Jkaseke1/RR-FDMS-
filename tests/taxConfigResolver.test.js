@@ -1,6 +1,7 @@
 const {
   DEFAULT_TAX_CONFIG,
-  resolveTaxConfig
+  resolveTaxConfig,
+  resolveCounterTaxID
 } = require('../src/integrations/taxConfigResolver');
 
 describe('tax config resolver', () => {
@@ -51,5 +52,21 @@ describe('tax config resolver', () => {
       zeroTaxID: DEFAULT_TAX_CONFIG.zeroTaxID,
       exemptTaxID: DEFAULT_TAX_CONFIG.exemptTaxID
     });
+  });
+
+  test('uses active device tax IDs for CloseDay counters', () => {
+    const config = {
+      vatTaxID: 515,
+      vatPercent: 15.5,
+      zeroTaxID: 2,
+      exemptTaxID: 3
+    };
+
+    expect(resolveCounterTaxID({ taxID: 517, taxPercent: 15.5 }, config))
+      .toBe(515);
+    expect(resolveCounterTaxID({ taxID: 99, taxPercent: 0 }, config))
+      .toBe(2);
+    expect(resolveCounterTaxID({ taxID: 1, taxPercent: null }, config))
+      .toBe(3);
   });
 });

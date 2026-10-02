@@ -14,7 +14,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { notifyErrorAlert } = require('../notifications/emailAlerts');
 const {
   DEFAULT_TAX_CONFIG,
-  resolveTaxConfig
+  resolveTaxConfig,
+  resolveCounterTaxID
 } = require('./taxConfigResolver');
 
 const supabase = createClient(
@@ -1524,12 +1525,18 @@ async function closeFiscalDay() {
       (inv.receiptTaxes || []).forEach(t => {
         // null is significant: it represents an exempt tax whose CloseDay
         // signature must contain an empty tax-percent value.
-        const taxID = t.taxID === undefined || t.taxID === null
-          ? (state.taxConfig?.vatTaxID || DEFAULT_TAX_CONFIG.vatTaxID)
-          : t.taxID;
         const taxPercent = t.taxPercent === undefined
           ? 15.5
           : t.taxPercent;
+        const taxID = resolveCounterTaxID(
+          { ...t, taxPercent },
+          state.taxConfig || DEFAULT_TAX_CONFIG
+        );
+        if (Number(t.taxID) !== Number(taxID)) {
+          log('CloseDay remapped stored taxID=' + t.taxID +
+            ' to active taxID=' + taxID +
+            ' for taxPercent=' + taxPercent, 'WARN');
+        }
         const taxKey = `${taxID}|${taxPercent === null ? 'null' : taxPercent}`;
 
         if (!currencyCounter.taxes[taxKey]) {

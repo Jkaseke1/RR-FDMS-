@@ -61,8 +61,23 @@ function resolveTaxConfig(taxes, options = {}) {
   };
 }
 
+function resolveCounterTaxID(tax, taxConfig = DEFAULT_TAX_CONFIG) {
+  const taxPercent = tax.taxPercent;
+  if (taxPercent == null) {
+    return Number(taxConfig.exemptTaxID) || DEFAULT_TAX_CONFIG.exemptTaxID;
+  }
+  if (Number(taxPercent) === 0) {
+    return Number(taxConfig.zeroTaxID) || DEFAULT_TAX_CONFIG.zeroTaxID;
+  }
+  if (Number(taxPercent) === Number(taxConfig.vatPercent || 15.5)) {
+    return Number(taxConfig.vatTaxID) || DEFAULT_TAX_CONFIG.vatTaxID;
+  }
+  return Number(tax.taxID);
+}
+
 module.exports = {
   DEFAULT_TAX_CONFIG,
   isTaxActive,
-  resolveTaxConfig
+  resolveTaxConfig,
+  resolveCounterTaxID
 };
