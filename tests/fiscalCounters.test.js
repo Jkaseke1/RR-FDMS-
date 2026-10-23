@@ -125,4 +125,28 @@ describe('Fiscal Counter Aggregator Tests', () => {
     expect(nonZero[0].fiscal_counter_type).toBe('BalanceByMoneyType');
   });
 
+  test('Negative BalanceByMoneyType is retained for a credit-only day', () => {
+    const counters = [
+      {
+        fiscal_counter_type: 'BalanceByMoneyType',
+        fiscal_counter_currency: 'USD',
+        fiscal_counter_money_type: 'Cash',
+        fiscal_counter_value: -925.00
+      },
+      {
+        fiscal_counter_type: 'BalanceByMoneyType',
+        fiscal_counter_currency: 'USD',
+        fiscal_counter_money_type: 'Cash',
+        fiscal_counter_value: 0
+      }
+    ];
+
+    const nonZero = counters.filter(
+      counter => Math.abs(counter.fiscal_counter_value) > 0.001
+    );
+
+    expect(nonZero).toHaveLength(1);
+    expect(nonZero[0].fiscal_counter_value).toBe(-925.00);
+  });
+
 });

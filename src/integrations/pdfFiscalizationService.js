@@ -1645,7 +1645,9 @@ async function closeFiscalDay() {
       });
 
       // 7. BalanceByMoneyType — net payment amount
-      if (curr.paymentAmount > 0.001) {
+      // Credit-only fiscal days have a negative net payment balance. ZIMRA
+      // still requires that BalanceByMoneyType counter in CloseDay.
+      if (Math.abs(curr.paymentAmount) > 0.001) {
         fiscalCounters.push({
           fiscalCounterType: 'BalanceByMoneyType',
           fiscalCounterCurrency: counterCurrency,
