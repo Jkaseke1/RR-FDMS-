@@ -10,6 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { submitReceipt } = require('../receipts/submitReceipt');
 const { parseInvoicePDF } = require('../utils/invoicePdfParser');
+const { allocateReceiptDate } = require('../utils/receiptDateAllocator');
 const { createClient } = require('@supabase/supabase-js');
 const { notifyErrorAlert } = require('../notifications/emailAlerts');
 const {
@@ -321,22 +322,6 @@ function clearProcessingBlockForNewDay(state) {
   delete state.processingBlockedReason;
   delete state.processingBlockedAt;
   delete state.processingBlockedReceipt;
-}
-
-function allocateReceiptDate(state) {
-  const now = new Date();
-  const fiscalOpened = state.fiscalDayOpened
-    ? new Date(state.fiscalDayOpened)
-    : new Date(0);
-  const lastDate = state.lastReceiptDate
-    ? new Date(state.lastReceiptDate)
-    : fiscalOpened;
-  const minimum = new Date(Math.max(fiscalOpened.getTime(), lastDate.getTime()) + 1000);
-  const chosen = now <= minimum ? minimum : now;
-
-  return chosen.toISOString()
-    .replace('Z', '')
-    .split('.')[0];
 }
 
 // Sage Tax Code to ZIMRA Tax ID Mapping
@@ -1224,16 +1209,8 @@ async function fiscalizePDF(filename, taxConfig) {
         .split('T')[0]
     };
 
-    // Track maximum receipt date seen (for chronological reference)
-    // Note: invoices may be processed out of order; we track the
-    // latest date seen, not the last submitted date
-    const currentMaxDate = state.lastReceiptDate
-      ? new Date(state.lastReceiptDate)
-      : new Date(0);
-    const thisDate = new Date(invoiceDate);
-    if (thisDate > currentMaxDate) {
-      state.lastReceiptDate = invoiceDate;
-    }
+    // Receipt timestamps are allocated in strict submission order.
+    state.lastReceiptDate = invoiceDate;
     saveState(state);
 
     // Update fiscal counters per ZIMRA spec section 6
