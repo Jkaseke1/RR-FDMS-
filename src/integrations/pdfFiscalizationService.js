@@ -11,6 +11,8 @@ const crypto = require('crypto');
 const { submitReceipt } = require('../receipts/submitReceipt');
 const { parseInvoicePDF } = require('../utils/invoicePdfParser');
 const { allocateReceiptDate } = require('../utils/receiptDateAllocator');
+const inv0950Recovery = require('./inv0950Recovery');
+const INV0950_RECOVERY = Symbol('INV0950 recovery');
 const { createClient } = require('@supabase/supabase-js');
 const { notifyErrorAlert } = require('../notifications/emailAlerts');
 const {
@@ -701,7 +703,7 @@ async function stampReceiptOnPDF(
 /**
  * Fiscalize a single PDF
  */
-async function fiscalizePDF(filename, taxConfig) {
+async function fiscalizePDF(filename, taxConfig, recoveryAuthorization) {
   const inputPath = path.join(UNSIGNED_DIR, filename);
 
   if (!fs.existsSync(inputPath)) {
@@ -796,7 +798,9 @@ async function fiscalizePDF(filename, taxConfig) {
     // Load state FIRST to check last receipt date
     const state = loadState();
 
-    if (isProcessingBlocked(state)) {
+    if (recoveryAuthorization === INV0950_RECOVERY) {
+      inv0950Recovery.validateRecovery(state, pdfData, DEVICE_ID);
+    } else if (isProcessingBlocked(state)) {
       throw new Error(
         'Processing is blocked after a ZIMRA red validation. ' +
         'Resolve ' + JSON.stringify(state.processingBlockedReceipt || {}) +
@@ -2149,6 +2153,62 @@ async function watchFolder() {
   }, POLL_INTERVAL);
 }
 
+// ZIMRA-authorized reversal for this incident; ordinary processing stays blocked.
+async function recoverINV0950CreditNote(sourcePath, submit = false) {
+  initializeDirs();
+  if (!acquireWatcherLock()) throw new Error('Stop the running watcher first');
+  try {
+    const source = path.resolve(sourcePath);
+    const expected = path.resolve(FDMS_BASE, 'recovery', 'Credit Note_20261028_112431.pdf');
+    if (source !== expected) throw new Error('Use the reviewed PDF at ' + expected);
+    const pdf = await parseInvoicePDF(source);
+    inv0950Recovery.validateRecovery(loadState(), pdf, DEVICE_ID);
+    inv0950Recovery.validateStatus(await getFiscalDayStatus());
+    const { getDeviceClient } = require('../http/deviceClient');
+    const config = (await getDeviceClient().get('/Device/v1/' + DEVICE_ID + '/GetConfig')).data;
+    const taxConfig = resolveTaxConfig(config.applicableTaxes || [], {
+      vatTaxID: DEFAULT_TAX_CONFIG.vatTaxID
+    });
+    if (taxConfig.usedVatFallback || Number(taxConfig.vatTaxID) !== 515 ||
+        Number(taxConfig.vatPercent) !== 15.5) {
+      throw new Error('Current ZIMRA tax configuration differs; review before submitting');
+    }
+    const plan = {
+      invoiceNo: 'CRN0129', originalInvoice: 'INV0950', originalReceiptId: 467326274,
+      fiscalDayNo: 68, nextGlobalNo: 272, nextReceiptCounter: 17,
+      currency: 'USD', receiptTotal: -420, taxAmount: -56.36,
+      processingRemainsBlocked: true
+    };
+    console.log('Recovery plan:', JSON.stringify(plan, null, 2));
+    if (!submit) return { dryRun: true, ...plan };
+    const marker = path.join(FDMS_BASE, 'recovery-CRN0129-attempt.json');
+    if (fs.existsSync(marker)) {
+      throw new Error('A recovery attempt already exists. Check ZIMRA and logs; do not retry automatically.');
+    }
+    const filename = path.basename(source);
+    const target = path.join(UNSIGNED_DIR, filename);
+    if (fs.existsSync(target)) throw new Error('Target PDF already exists in unsigned');
+    inv0950Recovery.validateRecovery(loadState(), pdf, DEVICE_ID);
+    inv0950Recovery.validateStatus(await getFiscalDayStatus());
+    fs.copyFileSync(STATE_FILE, path.join(FDMS_BASE,
+      'state-before-CRN0129-' + Date.now() + '.json'), fs.constants.COPYFILE_EXCL);
+    fs.writeFileSync(marker, JSON.stringify({ ...plan, startedAt: new Date().toISOString() }, null, 2),
+      { flag: 'wx' });
+    fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+    const success = await fiscalizePDF(filename, taxConfig, INV0950_RECOVERY);
+    const after = loadState();
+    const receipt = after.processedInvoices?.CRN0129;
+    console.log('Recovery result:', JSON.stringify({ success, receipt,
+      processingBlocked: after.processingBlocked }, null, 2));
+    if (!success || !receipt?.zimraReceiptId || receipt.hasRedValidation) {
+      throw new Error('Recovery did not complete cleanly. Keep service stopped; inspect response before any retry.');
+    }
+    return { success: true, receipt };
+  } finally {
+    releaseWatcherLock();
+  }
+}
+
 /**
  * Process single PDF and exit
  */
@@ -2176,6 +2236,7 @@ module.exports = {
     initializeDirs,
     watchFolder,
     processSinglePDF,
+    recoverINV0950CreditNote,
     closeFiscalDay,
     openFiscalDay,
     getFiscalDayStatus,
