@@ -835,7 +835,7 @@ async function fiscalizePDF(filename, taxConfig, recoveryAuthorization) {
             province: pdfData.customerProvince || 'Harare',
             city: pdfData.customerCity || 'Harare',
             street: pdfData.customerStreet || pdfData.customerHseNo || 'N/A',
-            houseNo: 'N/A'
+            houseNo: pdfData.customerHseNo || 'N/A'
           }
         }
       : null;

@@ -1,6 +1,7 @@
 const { PDFParse } = require('pdf-parse');
 const fs = require('fs');
 const HS_CODE_MAP = require('../config/hsCodes');
+const { extractBuyerFields } = require('./invoiceBuyerFields');
 
 async function parseInvoicePDF(filePath) {
   const dataBuffer = fs.readFileSync(filePath);
@@ -9,6 +10,9 @@ async function parseInvoicePDF(filePath) {
   await parser.load();
   const parseResult = await parser.getText();
   const text = parseResult.text;
+  const firstPage = await parser.doc.getPage(1);
+  const buyerFields = extractBuyerFields((await firstPage.getTextContent()).items);
+  await parser.destroy();
 
   const lines = text.split('\n')
     .map(l => l.trim())
@@ -1089,6 +1093,16 @@ async function parseInvoicePDF(filePath) {
         break;
       }
     }
+  }
+
+  if (buyerFields) {
+    customerName = buyerFields.name;
+    customerTIN = buyerFields.tin;
+    customerVAT = buyerFields.vat;
+    customerHseNo = buyerFields.house || 'N/A';
+    customerStreet = buyerFields.street || 'N/A';
+    customerRegion = buyerFields.region || 'N/A';
+    customerCity = buyerFields.city || 'N/A';
   }
 
   const result = {
